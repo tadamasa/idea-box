@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue } from './core.js';
+import { KINDS, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -62,8 +62,9 @@ function setTab(tab) {
 
 // ---------- データ ----------
 const live = () => state.cards.filter(c => !c.deleted);
-const items = () => live().filter(c => c.kind !== 'tag');
+const items = () => live().filter(isInfo);
 const tags = () => live().filter(c => c.kind === 'tag');
+const projects = () => live().filter(c => c.kind === 'project');
 const byId = id => state.cards.find(c => c.id === id);
 function tagNames() { return new Map(tags().map(t => [t.id, t.title])); }
 function tagUse() {
@@ -127,7 +128,22 @@ async function removeCard(card) {
       await save(c);
     }
   }
+  // プロジェクトを消すと、その手順も消える(つないだ情報やほかのプロジェクトは残る)
+  if (card.kind === 'project') for (const st of projectSteps(state.cards, card.id)) { st.deleted = true; await save(st); }
 }
+
+// つながりを付ける・外す。付けるときは片方(a)の links にだけ書く。外すときは両方から消す
+async function link(a, b) {
+  if (a.id === b.id || linkedIds(state.cards, a.id).includes(b.id)) return;
+  a.links = [...(a.links || []), b.id];
+  await save(a);
+}
+async function unlink(a, b) {
+  for (const [x, y] of [[a, b], [b, a]]) {
+    if ((x.links || []).includes(y.id)) { x.links = x.links.filter(i => i !== y.id); await save(x); }
+  }
+}
+const linked = (id, pred = () => true) => linkedIds(state.cards, id).map(byId).filter(c => c && !c.deleted && pred(c));
 
 // 写真は長辺1600pxのJPEGに縮めて端末にだけ置く
 async function shrink(file, max = 1600) {
@@ -341,12 +357,16 @@ async function renderCard(id) {
   const card = byId(id);
   if (!card || card.deleted) { location.hash = '#all'; return; }
   if (card.kind === 'tag') { location.hash = `#tag/${id}`; return; }
+  if (card.kind === 'project') { location.hash = `#project/${id}`; return; }
+  if (card.kind === 'step') return renderStep(card);
   setTab(card.inbox ? 'inbox' : 'all');
   setTitle(KINDS[card.kind] || 'カード', { back: true });
   const image = card.kind === 'photo' ? await db.get('images', id) : null;
   const near = nearCards(items(), card);
   const names = tagNames();
   const refs = (card.refs || []).map(byId).filter(c => c && !c.deleted);
+  const myProjects = linked(id, c => c.kind === 'project');
+  const otherProjects = projects().filter(p => p.status !== 'closed' && !myProjects.includes(p));
   const a = card.action;
   $view.innerHTML = `
     ${image ? `<div class="photo"><img id="photo" alt="写真"></div>` : ''}
@@ -364,6 +384,13 @@ async function renderCard(id) {
         <div class="chips chips--edit" id="c-tags"></div>
         <div class="row"><input id="c-tag-input" placeholder="タグを追加" list="tag-list" autocomplete="off" aria-label="タグを追加"><button class="btn btn--small btn--tinted" id="c-tag-add">追加</button></div>
         <datalist id="tag-list">${tags().map(t => `<option value="${esc(t.title)}">`).join('')}</datalist>
+      </div>
+    </section>
+
+    <section class="list-section"><h2 class="list-section__header">プロジェクト</h2>
+      <div class="card">
+        <div class="chips chips--edit">${myProjects.map(p => `<span class="chip-tag chip-tag--edit chip-project"><a href="#project/${esc(p.id)}">${esc(p.title)}</a><button data-unlink="${esc(p.id)}" aria-label="${esc(p.title)} とのつながりを外す">×</button></span>`).join('') || '<span class="muted small">どのプロジェクトにもつないでいません(それで構いません)</span>'}</div>
+        ${otherProjects.length ? `<div class="row"><select id="c-project" aria-label="プロジェクトにつなぐ"><option value="">プロジェクトにつなぐ…</option>${otherProjects.map(p => `<option value="${esc(p.id)}">${esc(p.title)}</option>`).join('')}</select></div>` : ''}
       </div>
     </section>
 
@@ -448,6 +475,11 @@ async function renderCard(id) {
   tagInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addTag(); } });
   drawTags();
 
+  // プロジェクトとのつながり
+  $view.querySelectorAll('[data-unlink]').forEach(b => b.addEventListener('click', async () => { await unlink(card, byId(b.dataset.unlink)); renderCard(id); }));
+  const pSel = document.getElementById('c-project');
+  if (pSel) pSel.addEventListener('change', async () => { if (!pSel.value) return; await link(card, byId(pSel.value)); toast('プロジェクトにつなぎました'); renderCard(id); });
+
   // アクション
   if (a) {
     const set = async patch => { Object.assign(card.action, patch); await save(card); };
@@ -489,24 +521,275 @@ function grow(el) {
   el.style.height = `${Math.max(132, el.scrollHeight)}px`;
 }
 
+
+// ---------- プロジェクト ----------
+async function renderProjects() {
+  setTab('projects');
+  setTitle('プロジェクト');
+  const all = projects().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  const active = all.filter(p => p.status !== 'closed');
+  const closed = all.filter(p => p.status === 'closed');
+  const row = p => {
+    const pr = stepProgress(projectSteps(state.cards, p.id));
+    return `<li class="item"><a class="item__main" href="#project/${esc(p.id)}">
+      <span class="item__title">${esc(p.title || '(無題)')}</span>
+      ${p.goal ? `<span class="item__snippet">${esc(p.goal)}</span>` : ''}
+      <span class="item__meta">${p.due ? `<span class="badge">${esc(p.due)}</span>` : ''}${pr.all ? `<span>手順 ${pr.done}/${pr.all}</span>` : ''}${p.status === 'closed' ? `<span>閉じた ${esc(fmtDate(p.closedAt))}</span>` : ''}</span>
+    </a></li>`;
+  };
+  $view.innerHTML = `
+    <div class="card"><div class="row"><input id="new-project" class="row-left" placeholder="新しいプロジェクト(例: 車を買い替える)" aria-label="新しいプロジェクト"><button class="btn btn--small btn--tinted" id="add-project">作る</button></div></div>
+    ${active.length ? `<ul class="list list--inset items">${active.map(row).join('')}</ul>`
+      : `<div class="empty"><p class="empty__message">ゴールのあることを始めるときに作ります。情報や手順、ほかのプロジェクトをここに集められます。</p></div>`}
+    ${closed.length ? `<details class="done-list"><summary class="pad">閉じたプロジェクト</summary><ul class="list list--inset items">${closed.map(row).join('')}</ul></details>` : ''}`;
+  const input = document.getElementById('new-project');
+  const add = async () => {
+    if (!input.value.trim()) { input.focus(); return; }
+    const p = newProject({ id: db.uid(), title: input.value });
+    await save(p);
+    location.hash = `#project/${p.id}`;
+  };
+  document.getElementById('add-project').addEventListener('click', add);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) add(); });
+}
+
+async function renderProject(id, { suggestions = null } = {}) {
+  const p = byId(id);
+  if (!p || p.deleted || p.kind !== 'project') { location.hash = '#projects'; return; }
+  setTab('projects');
+  setTitle(p.title || 'プロジェクト', { back: true });
+  const steps = projectSteps(state.cards, id);
+  const rel = linked(id);
+  const relProjects = rel.filter(c => c.kind === 'project');
+  const relInfo = rel.filter(isInfo);
+  const names = tagNames();
+  const others = projects().filter(x => x.id !== id && x.status !== 'closed' && !relProjects.includes(x));
+  const t = today();
+  const closed = p.status === 'closed';
+  const stepRow = (st, i) => {
+    const subs = linked(st.id, c => c.kind === 'project' && c.id !== id);
+    return `<li class="item item--action item--step" data-id="${esc(st.id)}">
+      <input type="checkbox" class="item__check" ${st.action.done ? 'checked' : ''} aria-label="${esc(st.title)} を完了">
+      <a class="item__main" href="#card/${esc(st.id)}">
+        <span class="item__title${st.action.done ? ' is-done' : ''}">${esc(st.title || '(未記入)')}</span>
+        ${st.action.due || subs.length ? `<span class="item__meta">${st.action.due ? `<span class="badge${isOverdue(st.action, t) ? ' badge--warn' : ''}">${esc(st.action.due)}</span>` : ''}${subs.map(s => `<span class="kind-project">→ ${esc(s.title)}</span>`).join('')}</span>` : ''}
+      </a>
+      <span class="item__tools">
+        <button data-move="-1" ${i === 0 ? 'disabled' : ''} aria-label="上へ">↑</button>
+        <button data-move="1" ${i === steps.length - 1 ? 'disabled' : ''} aria-label="下へ">↓</button>
+      </span>
+    </li>`;
+  };
+  $view.innerHTML = `
+    <div class="card">
+      <input class="field field--title" id="p-title" placeholder="プロジェクト名" value="${esc(p.title)}" aria-label="プロジェクト名">
+      <textarea class="field field--desc" id="p-goal" placeholder="ゴール(どうなったら終わりか)" aria-label="ゴール">${esc(p.goal)}</textarea>
+      <div class="row"><label for="p-due">期日(任意)</label><input id="p-due" type="date" value="${esc(p.due || '')}"></div>
+      <textarea class="field field--desc" id="p-body" placeholder="メモ(任意)" aria-label="メモ">${esc(p.body)}</textarea>
+    </div>
+
+    <section class="list-section"><h2 class="list-section__header">手順</h2>
+      ${steps.length ? `<ul class="list list--inset items" id="steps">${steps.map(stepRow).join('')}</ul>` : ''}
+      <div class="card${steps.length ? ' card--after-list' : ''}"><div class="row"><input id="new-step" class="row-left" placeholder="手順を追加" aria-label="手順を追加"><button class="btn btn--small btn--tinted" id="add-step">追加</button></div></div>
+      <p class="list-section__footer">期限を付けた手順だけが、アクション画面に出ます。手順を開くと、別のプロジェクトへ移したり、サブプロジェクトにしたりできます。</p>
+      ${suggestions ? `<div class="card suggest">
+          ${suggestions.length ? suggestions.map((s, i) => `<label class="row suggest__row"><input type="checkbox" data-s="${i}" checked><span>${esc(s)}</span></label>`).join('')
+            : '<p class="muted small">新しい手順の案は出ませんでした。</p>'}
+        </div>
+        <div class="actions">${suggestions.length ? '<button class="btn btn--prominent" id="s-take">選んだものを手順に入れる</button>' : ''}<button class="btn btn--plain" id="s-close">閉じる</button></div>`
+      : `<div class="actions"><button class="btn btn--tinted" id="suggest">AIに手順の案を出してもらう</button></div>`}
+    </section>
+
+    <section class="list-section"><h2 class="list-section__header">つながっているプロジェクト</h2>
+      <div class="card">
+        <div class="chips chips--edit">${relProjects.map(x => `<span class="chip-tag chip-tag--edit chip-project"><a href="#project/${esc(x.id)}">${esc(x.title)}</a><button data-unlink="${esc(x.id)}" aria-label="${esc(x.title)} とのつながりを外す">×</button></span>`).join('') || '<span class="muted small">なし</span>'}</div>
+        ${others.length ? `<div class="row"><select id="p-link" aria-label="プロジェクトをつなぐ"><option value="">プロジェクトをつなぐ…</option>${others.map(x => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join('')}</select></div>` : ''}
+      </div>
+      <p class="list-section__footer">親子ではなく、横のつながりです。どちらから見ても表示されます。</p>
+    </section>
+
+    <section class="list-section"><h2 class="list-section__header">つないだ情報</h2>
+      ${relInfo.length ? `<ul class="list list--inset items">${relInfo.map(c => cardRow(c, { names })).join('')}</ul>` : ''}
+      <div class="card${relInfo.length ? ' card--after-list' : ''}"><div class="row"><input id="new-info" class="row-left" placeholder="メモ・URLをここに書いてつなぐ" aria-label="情報を追加"><button class="btn btn--small btn--tinted" id="add-info">追加</button></div></div>
+      <p class="list-section__footer">受信箱やすべてのカードからも、カードを開いて「プロジェクトにつなぐ」でここに集まります。</p>
+    </section>
+
+    <section class="list-section"><h2 class="list-section__header">${closed ? '閉じたときのメモ' : 'プロジェクトを閉じる'}</h2>
+      <div class="card"><textarea class="field field--desc" id="p-close-note" placeholder="終わってみて一言(任意)" aria-label="閉じるときのメモ">${esc(p.closeNote)}</textarea></div>
+      <div class="actions">
+        ${closed ? '<button class="btn btn--plain" id="p-reopen">もう一度開く</button>' : '<button class="btn btn--tinted" id="p-close">閉じる</button>'}
+        <button class="btn btn--plain danger" id="p-del">削除</button>
+      </div>
+    </section>`;
+
+  autosave(p, { title: document.getElementById('p-title'), goal: document.getElementById('p-goal'), body: document.getElementById('p-body'), closeNote: document.getElementById('p-close-note') },
+    () => setTitle(p.title || 'プロジェクト', { back: true }));
+  document.getElementById('p-due').addEventListener('change', async e => { p.due = e.target.value || null; await save(p); });
+
+  // 手順
+  const stepInput = document.getElementById('new-step');
+  const addStep = async () => {
+    if (!stepInput.value.trim()) { stepInput.focus(); return; }
+    await save(newStep({ id: db.uid(), projectId: id, text: stepInput.value, order: nextOrder(projectSteps(state.cards, id)) }));
+    await renderProject(id);
+    document.getElementById('new-step').focus();
+  };
+  document.getElementById('add-step').addEventListener('click', addStep);
+  stepInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) addStep(); });
+  $view.querySelectorAll('#steps .item__check').forEach(cb => cb.addEventListener('change', async () => {
+    const st = byId(cb.closest('.item').dataset.id);
+    Object.assign(st.action, { done: cb.checked, doneAt: cb.checked ? new Date().toISOString() : null });
+    await save(st);
+    renderProject(id);
+  }));
+  $view.querySelectorAll('#steps [data-move]').forEach(b => b.addEventListener('click', async () => {
+    const i = steps.findIndex(st => st.id === b.closest('.item').dataset.id);
+    const j = i + Number(b.dataset.move);
+    if (j < 0 || j >= steps.length) return;
+    // 並びを1から振り直してから入れ替える(order が重なっていても崩れない)
+    steps.forEach((st, k) => { st.order = k + 1; });
+    [steps[i].order, steps[j].order] = [steps[j].order, steps[i].order];
+    for (const st of steps) await save(st);
+    renderProject(id);
+  }));
+
+  // AIの手順案
+  const sug = document.getElementById('suggest');
+  if (sug) sug.addEventListener('click', async () => {
+    const apiKey = await db.getMeta('geminiKey', '');
+    if (!apiKey) { toast('設定でGemini APIキーを入れてください'); return; }
+    sug.disabled = true; sug.textContent = '考えています…';
+    try {
+      const list = await gemini.suggestSteps({ apiKey, model: await db.getMeta('geminiModel', gemini.DEFAULT_MODEL), project: p, steps: steps.map(st => st.title), related: relInfo.map(displayTitle) });
+      renderProject(id, { suggestions: list });
+    } catch (err) {
+      toast(err.message, 5000);
+      sug.disabled = false; sug.textContent = 'AIに手順の案を出してもらう';
+    }
+  });
+  const take = document.getElementById('s-take');
+  if (take) take.addEventListener('click', async () => {
+    let order = nextOrder(steps);
+    for (const cb of $view.querySelectorAll('.suggest [data-s]:checked')) await save(newStep({ id: db.uid(), projectId: id, text: suggestions[Number(cb.dataset.s)], order: order++ }));
+    renderProject(id);
+  });
+  const sclose = document.getElementById('s-close');
+  if (sclose) sclose.addEventListener('click', () => renderProject(id));
+
+  // つながり
+  $view.querySelectorAll('[data-unlink]').forEach(b => b.addEventListener('click', async () => { await unlink(p, byId(b.dataset.unlink)); renderProject(id); }));
+  const pl = document.getElementById('p-link');
+  if (pl) pl.addEventListener('change', async () => { if (!pl.value) return; await link(p, byId(pl.value)); renderProject(id); });
+  const infoInput = document.getElementById('new-info');
+  const addInfo = async () => {
+    if (!infoInput.value.trim()) { infoInput.focus(); return; }
+    const c = await addCard({ text: infoInput.value });
+    c.inbox = false;
+    c.links = [id];
+    await save(c);
+    renderProject(id);
+  };
+  document.getElementById('add-info').addEventListener('click', addInfo);
+  infoInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) addInfo(); });
+
+  // 閉じる・開く・削除
+  const pc = document.getElementById('p-close');
+  if (pc) pc.addEventListener('click', async () => { p.closeNote = document.getElementById('p-close-note').value; p.status = 'closed'; p.closedAt = new Date().toISOString(); await save(p); toast('プロジェクトを閉じました'); renderProject(id); });
+  const pr = document.getElementById('p-reopen');
+  if (pr) pr.addEventListener('click', async () => { p.status = 'active'; p.closedAt = null; await save(p); renderProject(id); });
+  document.getElementById('p-del').addEventListener('click', async () => {
+    if (!confirm(`「${p.title}」と、その手順を削除します。つないだ情報のカードは残ります。`)) return;
+    await removeCard(p);
+    location.hash = '#projects';
+  });
+}
+
+// 手順の画面: 書き足す、期限、別のプロジェクトへ移す、サブプロジェクトにする
+async function renderStep(st) {
+  const id = st.id;
+  const owner = byId(st.project);
+  setTab('projects');
+  setTitle('手順', { back: true });
+  const subs = linked(id, c => c.kind === 'project' && c.id !== st.project);
+  const targets = projects().filter(x => x.status !== 'closed' || x.id === st.project);
+  const a = st.action;
+  $view.innerHTML = `
+    <div class="card">
+      <div class="row"><input type="checkbox" id="st-done" ${a.done ? 'checked' : ''} aria-label="完了"><input id="st-title" class="row-left" placeholder="やること" value="${esc(st.title)}"></div>
+      <div class="row"><label for="st-due">期限(任意)</label><input id="st-due" type="date" value="${esc(a.due || '')}"></div>
+      <textarea class="field field--desc" id="st-body" placeholder="メモ(任意)" aria-label="メモ">${esc(st.body)}</textarea>
+      ${a.done ? `<textarea class="field field--desc" id="st-note" placeholder="やってみてどうだった?(任意)" aria-label="完了メモ">${esc(a.doneNote || '')}</textarea>` : ''}
+    </div>
+    <p class="pad small muted">期限を付けると、アクション画面にも出ます。</p>
+
+    <section class="list-section"><h2 class="list-section__header">プロジェクト</h2>
+      <div class="card">
+        ${owner && !owner.deleted ? `<div class="row"><a class="kind-project" href="#project/${esc(owner.id)}">${esc(owner.title)}</a></div>` : ''}
+        <div class="row"><label for="st-move">移す先</label><select id="st-move">${targets.map(x => `<option value="${esc(x.id)}" ${x.id === st.project ? 'selected' : ''}>${esc(x.title)}</option>`).join('')}</select></div>
+      </div>
+    </section>
+
+    <section class="list-section"><h2 class="list-section__header">サブプロジェクト</h2>
+      ${subs.length ? `<div class="card"><div class="chips chips--edit">${subs.map(x => `<a class="chip-tag chip-project" href="#project/${esc(x.id)}">${esc(x.title)}</a>`).join('')}</div></div>` : ''}
+      <div class="actions"><button class="btn btn--tinted" id="st-sub">この手順をプロジェクトにする</button></div>
+      <p class="list-section__footer">手順はこのまま残り、新しいプロジェクトと元のプロジェクトがつながります。</p>
+    </section>
+
+    <div class="actions"><button class="btn btn--plain danger" id="st-del">手順を削除</button></div>`;
+
+  const set = async patch => { Object.assign(st, patch); await save(st); };
+  document.getElementById('st-done').addEventListener('change', async e => {
+    await set({ action: { ...st.action, done: e.target.checked, doneAt: e.target.checked ? new Date().toISOString() : null } });
+    renderStep(st);
+  });
+  const timers = {};
+  const later = (k, fn) => { clearTimeout(timers[k]); timers[k] = setTimeout(fn, 500); };
+  document.getElementById('st-title').addEventListener('input', e => later('t', () => set({ title: e.target.value, action: { ...st.action, text: e.target.value } })));
+  document.getElementById('st-body').addEventListener('input', e => later('b', () => set({ body: e.target.value })));
+  const note = document.getElementById('st-note');
+  if (note) note.addEventListener('input', () => later('n', () => set({ action: { ...st.action, doneNote: note.value } })));
+  document.getElementById('st-due').addEventListener('change', e => set({ action: { ...st.action, due: e.target.value || null } }));
+  document.getElementById('st-move').addEventListener('change', async e => {
+    const to = e.target.value;
+    if (to === st.project) return;
+    await set({ project: to, order: nextOrder(projectSteps(state.cards, to)) });
+    toast(`「${byId(to).title}」に移しました`);
+    renderStep(st);
+  });
+  document.getElementById('st-sub').addEventListener('click', async () => {
+    const np = newProject({ id: db.uid(), title: st.title });
+    // 新しいプロジェクトの側に、元の手順と元のプロジェクトへのつながりを書く
+    np.links = [id, ...(owner && !owner.deleted ? [owner.id] : [])];
+    await save(np);
+    location.hash = `#project/${np.id}`;
+  });
+  document.getElementById('st-del').addEventListener('click', async () => {
+    if (!confirm('この手順を削除します。')) return;
+    await removeCard(st);
+    location.hash = owner ? `#project/${owner.id}` : '#projects';
+  });
+}
+
 // ---------- アクション ----------
 async function renderActions() {
   setTab('actions');
   setTitle('アクション');
-  const { open, done } = sortActions(items());
+  const { open, done } = sortActions(forActionList(state.cards));
   const t = today();
+  // 手順ならプロジェクト名を、単発のアクションなら元のカードの見出しを添える
+  const sub = c => c.kind === 'step' ? `${(byId(c.project) || {}).title || ''} の手順` : displayTitle(c);
   const row = c => `<li class="item item--action" data-id="${esc(c.id)}">
     <input type="checkbox" class="item__check" ${c.action.done ? 'checked' : ''} aria-label="${esc(c.action.text)} を完了">
     <a class="item__main" href="#card/${esc(c.id)}">
       <span class="item__title">${esc(c.action.text || '(やること未記入)')}</span>
-      <span class="item__snippet">${esc(displayTitle(c))}</span>
+      <span class="item__snippet${c.kind === 'step' ? ' kind-project' : ''}">${esc(sub(c))}</span>
       ${c.action.due ? `<span class="item__meta"><span class="badge${isOverdue(c.action, t) ? ' badge--warn' : ''}">${esc(c.action.due)}</span></span>` : ''}
     </a></li>`;
   $view.innerHTML = open.length || done.length ? `
     ${open.length ? `<ul class="list list--inset items">${open.map(row).join('')}</ul>` : '<div class="empty"><p class="empty__message">やることはありません</p></div>'}
     ${done.length ? `<details class="done-list"><summary class="pad">完了したもの</summary><ul class="list list--inset items">${done.slice(0, 100).map(row).join('')}</ul></details>` : ''}
-    <p class="pad small muted">カードを開いて「アクション」から追加します。行を押すと、元のカードに戻れます。</p>`
-    : `<div class="empty"><p class="empty__message">アクションはまだありません。カードを開いて、必要なときだけ追加してください。</p></div>`;
+    <p class="pad small muted">カードを開いて「アクション」から追加します。プロジェクトの手順は、期限を付けたものだけがここに出ます。</p>`
+    : `<div class="empty"><p class="empty__message">アクションはまだありません。カードを開いて追加するか、プロジェクトの手順に期限を付けると、ここに出ます。</p></div>`;
   $view.querySelectorAll('.item__check').forEach(cb => cb.addEventListener('change', async () => {
     const card = byId(cb.closest('.item').dataset.id);
     card.action.done = cb.checked;
@@ -603,6 +886,8 @@ async function route() {
     case 'tag': return renderTag(decodeURIComponent(arg || ''));
     case 'card': return renderCard(decodeURIComponent(arg || ''));
     case 'actions': return renderActions();
+    case 'projects': return renderProjects();
+    case 'project': return renderProject(decodeURIComponent(arg || ''));
     case 'settings': return renderSettings();
     default: return renderInbox();
   }
