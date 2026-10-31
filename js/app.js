@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, BASE_KINDS, KIND_FIELDS, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
+import { KINDS, BASE_KINDS, KIND_FIELDS, KIND_ICONS, kindIconSvg, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -197,6 +197,7 @@ let linkCache = null, slotCache = null, kindCache = null;
 const kinds = () => (kindCache ||= kindList(state.cards.filter(c => c.kind === 'kinddef')));
 const kindOf = key => kinds().find(k => k.key === key);
 const kindName = key => (kindOf(key) || {}).title || KINDS[key] || 'メモ';
+const kindIcon = (key, size) => kindIconSvg((kindOf(key) || {}).icon, size);
 const hasField = (key, f) => ((kindOf(key) || {}).fields || []).includes(f);
 const links = () => (linkCache ||= linkIndex(state.cards));
 const slots = () => (slotCache ||= { t: tagSlots(state.cards.filter(c => c.kind === 'tag')), p: projectSlots(state.cards.filter(c => c.kind === 'project')) });
@@ -271,7 +272,7 @@ function cardRow(card, { names = tagNames(), inboxButton = false, filterable = f
   const snippet = card.title ? (card.body || card.quote || '') : (card.body || '').split('\n').slice(1).join(' ');
   const action = card.action && !card.action.done ? `<span class="badge${isOverdue(card.action, today()) ? ' badge--warn' : ''}">アクション${card.action.due ? ` ${esc(shortDue(card.action.due))}` : ''}</span>` : '';
   const head = `<span class="item__head"><span class="item__text">
-      <span class="item__kind kind-${esc(card.kind)}">${esc(kindName(card.kind))}</span>
+      <span class="item__kind kind-${esc(card.kind)}">${kindIcon(card.kind)}${esc(kindName(card.kind))}</span>
       <span class="item__title">${projectDot(card)}${esc(displayTitle(card))}</span>
       ${snippet.trim() ? `<span class="item__snippet">${esc(snippet.trim().slice(0, 140))}</span>` : ''}</span>${asideHtml(card)}</span>`;
   if (filterable) {
@@ -368,7 +369,7 @@ async function renderInbox() {
   $view.innerHTML = `
     <div class="kind-pick" role="radiogroup" aria-label="種別">
       <button class="kind ${ck ? '' : 'is-active'}" data-ck="" role="radio" aria-checked="${!ck}">おまかせ</button>
-      ${kinds().filter(k => !k.hidden && k.key !== 'summary').map(k => `<button class="kind ${ck && ck.key === k.key ? 'is-active' : ''}" data-ck="${esc(k.key)}" role="radio" aria-checked="${!!ck && ck.key === k.key}">${esc(k.title)}</button>`).join('')}
+      ${kinds().filter(k => !k.hidden && k.key !== 'summary').map(k => `<button class="kind ${ck && ck.key === k.key ? 'is-active' : ''}" data-ck="${esc(k.key)}" role="radio" aria-checked="${!!ck && ck.key === k.key}">${kindIconSvg(k.icon)}${esc(k.title)}</button>`).join('')}
       <a class="kind kind--edit" href="#kinds" aria-label="種別を編集">編集</a>
     </div>
     <div class="card capture">
@@ -449,7 +450,7 @@ async function renderAll() {
   if (state.projectFilter && !projList.some(p => p.id === state.projectFilter)) state.projectFilter = '';
   $view.innerHTML = `
     <div class="pad"><input class="search-field" id="q" type="search" placeholder="検索(語・#タグ)" value="${esc(state.query)}" aria-label="検索"></div>
-    <div class="filters" role="group" aria-label="種類で絞る">${filters().map(([k, l]) => `<button class="kind ${state.kindFilter === k ? 'is-active' : ''}" data-k="${esc(k)}" aria-pressed="${state.kindFilter === k}">${esc(l)}</button>`).join('')}</div>
+    <div class="filters" role="group" aria-label="種類で絞る">${filters().map(([k, l]) => `<button class="kind ${state.kindFilter === k ? 'is-active' : ''}" data-k="${esc(k)}" aria-pressed="${state.kindFilter === k}">${kindOf(k) ? kindIcon(k) : ''}${esc(l)}</button>`).join('')}</div>
     <div class="selects" role="group" aria-label="タグ・プロジェクトで絞る、並べ替え">
       <select id="f-tag" class="pill-select${state.tagFilter ? ' is-set' : ''}" aria-label="タグで絞る"><option value=""># タグ</option>${tagList.map(t => `<option value="${esc(t.id)}" ${t.id === state.tagFilter ? 'selected' : ''}>#${esc(t.title)}</option>`).join('')}</select>
       <select id="f-proj" class="pill-select${state.projectFilter ? ' is-set' : ''}" aria-label="プロジェクトで絞る"><option value="">◇ プロジェクト</option>${projList.map(p => `<option value="${esc(p.id)}" ${p.id === state.projectFilter ? 'selected' : ''}>${esc(p.title)}${p.status === 'closed' ? '(閉じた)' : ''}</option>`).join('')}</select>
@@ -1094,7 +1095,7 @@ function kindDef(key) {
   const d = byId(kindDefId(key));
   if (d && !d.deleted) return d;
   const k = kindOf(key) || { title: '', fields: [], order: 1000 };
-  return newKindDef({ key, title: k.title, fields: isBaseKind(key) ? [] : k.fields, order: k.order });
+  return newKindDef({ key, title: k.title, fields: isBaseKind(key) ? [] : k.fields, order: k.order, icon: k.icon });
 }
 async function saveKind(key, patch) {
   const d = Object.assign(kindDef(key), patch);
@@ -1111,7 +1112,8 @@ async function renderKinds() {
   for (const c of items()) count.set(c.kind, (count.get(c.kind) || 0) + 1);
   const row = (k, i) => `<li class="item kind-row" data-key="${esc(k.key)}">
     <div class="item__body kind-row__body">
-      <div class="row"><input class="row-left kind-name" value="${esc(k.title)}" aria-label="種別の名前"><span class="small muted">${count.get(k.key) || 0}枚</span></div>
+      <div class="row"><button type="button" class="kind-icon-btn" data-icon-open aria-expanded="false" aria-label="アイコンを選ぶ(いま: ${esc(KIND_ICONS[k.icon][0])})">${kindIconSvg(k.icon, 18)}</button><input class="row-left kind-name" value="${esc(k.title)}" aria-label="種別の名前"><span class="small muted">${count.get(k.key) || 0}枚</span></div>
+      <div class="icon-pick" role="radiogroup" aria-label="アイコン" hidden>${Object.entries(KIND_ICONS).map(([n, [l]]) => `<button type="button" class="icon-pick__btn${n === k.icon ? ' is-on' : ''}" data-icon="${n}" role="radio" aria-checked="${n === k.icon}" title="${l}" aria-label="${l}">${kindIconSvg(n, 18)}</button>`).join('')}</div>
       <div class="kind-row__opts">
         ${k.base ? `<span class="small muted">${k.fields.length ? `欄: ${k.fields.map(f => f === 'photo' ? '写真' : KIND_FIELDS[f]).join('・')}` : '欄: メモだけ'}</span>`
           : Object.entries(KIND_FIELDS).map(([f, l]) => `<button type="button" class="chip-tag chip-pick${k.fields.includes(f) ? ' is-on' : ''}" data-field="${f}" aria-pressed="${k.fields.includes(f)}">${k.fields.includes(f) ? '✓ ' : ''}${l}</button>`).join('')}
@@ -1125,7 +1127,7 @@ async function renderKinds() {
     </span>
   </li>`;
   $view.innerHTML = `
-    <p class="pad small muted">情報ソースの種類です。名前を変えたり、並べ替えたり、使わないものを隠したりできます。足した種別には、作るときに出す欄(リンク・引用)を選べます。</p>
+    <p class="pad small muted">情報ソースの種類です。アイコンや名前を変えたり、並べ替えたり、使わないものを隠したりできます。足した種別には、作るときに出す欄(リンク・引用)を選べます。</p>
     <ul class="list list--inset items" id="kind-list">${list.map(row).join('')}</ul>
     <div class="card card--after-list"><div class="row"><input id="new-kind" class="row-left" placeholder="新しい種別(例: 本、論文、ポッドキャスト)" aria-label="新しい種別"><button class="btn btn--small btn--tinted" id="add-kind">足す</button></div></div>
     <p class="pad small muted">「隠す」と、受信箱の選択や絞り込みに出なくなります(その種別のカードはそのまま残ります)。足した種別を消すと、そのカードはメモになります。</p>`;
@@ -1140,6 +1142,15 @@ async function renderKinds() {
     const key = keyOf(b), f = b.dataset.field, cur = new Set(kindOf(key).fields);
     cur.has(f) ? cur.delete(f) : cur.add(f);
     await saveKind(key, { fields: [...cur] });
+    renderKinds();
+  }));
+  $view.querySelectorAll('[data-icon-open]').forEach(b => b.addEventListener('click', () => {
+    const pick = b.closest('.kind-row').querySelector('.icon-pick');
+    pick.hidden = !pick.hidden;
+    b.setAttribute('aria-expanded', String(!pick.hidden));
+  }));
+  $view.querySelectorAll('[data-icon]').forEach(b => b.addEventListener('click', async () => {
+    await saveKind(keyOf(b), { icon: b.dataset.icon });
     renderKinds();
   }));
   $view.querySelectorAll('[data-hide]').forEach(cb => cb.addEventListener('change', async () => { await saveKind(keyOf(cb), { hidden: cb.checked }); }));

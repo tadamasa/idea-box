@@ -357,3 +357,15 @@ test('kindList: 最初の種別に、名前の変更・隠す・追加を重ね�
   assert.equal(detectKind({ text: 'x', kind: 'tag' }), 'memo');
   assert.equal(isInfo({ kind: 'kinddef' }), false);
 });
+
+test('種別アイコン: 既定・変更・不正な名前', async () => {
+  const { kindList, newKindDef, kindIconSvg, KIND_ICONS } = await import('../js/core.js');
+  const base = kindList([]);
+  assert.equal(base.find(k => k.key === 'url').icon, 'link');
+  const list = kindList([newKindDef({ key: 'url', title: 'Web', icon: 'globe' }), newKindDef({ key: 'kbook', title: '本', icon: 'book' }), newKindDef({ key: 'kx', title: 'X', icon: '"><script>' })]);
+  assert.equal(list.find(k => k.key === 'url').icon, 'globe');
+  assert.equal(list.find(k => k.key === 'kbook').icon, 'book');
+  assert.equal(list.find(k => k.key === 'kx').icon, 'dot');
+  assert.ok(!kindIconSvg('"><script>').includes('<script>'));
+  assert.ok(kindIconSvg('book').includes(KIND_ICONS.book[1]));
+});

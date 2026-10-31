@@ -250,3 +250,13 @@ button.chip-tag { min-height: 24px; padding: 1px 8px; font-size: 12px; line-heig
 .kind-row__opts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .kind-hide { display: inline-flex; align-items: center; gap: 4px; color: var(--color-label-secondary); }
 .kind-hide input { width: 18px; height: 18px; accent-color: var(--color-accent); }
+/* 種別アイコン(線画・文字色) */
+.ki { flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; }
+.item__kind { display: inline-flex; align-items: center; gap: 3px; }
+.kind .ki, .kind-pick .kind .ki { margin-right: 4px; }
+.kind { display: inline-flex; align-items: center; }
+.kind-icon-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-right: var(--space-2); border-radius: 10px; background-color: var(--bg-fill-tertiary); color: var(--color-label); }
+.icon-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; padding: var(--space-1) 0 var(--space-2); }
+.icon-pick[hidden] { display: none; }
+.icon-pick__btn { display: inline-flex; align-items: center; justify-content: center; height: 40px; border-radius: 10px; color: var(--color-label-secondary); }
+.icon-pick__btn.is-on { background-color: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent); }
