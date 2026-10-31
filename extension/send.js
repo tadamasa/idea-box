@@ -6,6 +6,22 @@ export async function settings() {
   return { hubUrl: s.hubUrl || '', token: s.token || '', appUrl: s.appUrl || DEFAULT_APP };
 }
 
+// 開いているページの代表画像(og:image / twitter:image)。読めないページでは空
+export async function pageImage(tabId) {
+  try {
+    const [r] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const q = k => document.querySelector(`meta[property="${k}"], meta[name="${k}"]`);
+        const el = q('og:image') || q('og:image:url') || q('twitter:image');
+        try { return el ? new URL(el.content, location.href).href : ''; } catch { return ''; }
+      },
+    });
+    const u = (r && r.result) || '';
+    return /^https:\/\//i.test(u) ? u : '';
+  } catch { return ''; }
+}
+
 export async function send(capture) {
   const s = await settings();
   if (s.hubUrl && s.token) {
@@ -23,7 +39,7 @@ export async function send(capture) {
   }
   const u = new URL(s.appUrl);
   u.searchParams.set('capture', '1');
-  for (const k of ['text', 'url', 'title', 'quote', 'tags']) if (capture[k]) u.searchParams.set(k, Array.isArray(capture[k]) ? capture[k].join(',') : capture[k]);
+  for (const k of ['text', 'url', 'title', 'quote', 'tags', 'image']) if (capture[k]) u.searchParams.set(k, Array.isArray(capture[k]) ? capture[k].join(',') : capture[k]);
   await chrome.tabs.create({ url: u.href });
   return 'tab';
 }

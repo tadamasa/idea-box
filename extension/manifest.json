@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "idea-box に送る",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "開いているページや選んだ文を、idea-box の受信箱に送ります。",
   "action": { "default_popup": "popup.html", "default_title": "idea-box に送る" },
   "background": { "service_worker": "background.js", "type": "module" },

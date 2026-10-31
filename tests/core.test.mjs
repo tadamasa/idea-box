@@ -190,7 +190,7 @@ test('ハブ: タイトルのないURLは、ページの見出し・Xのポス�
     calls.push(url);
     if (url.startsWith('https://publish.twitter.com/oembed')) return { body: JSON.stringify({ author_name: '山田', html: '<blockquote class="twitter-tweet"><p lang="ja" dir="ltr">朝の散歩で&quot;発見&quot;<br>がある <a href="https://t.co/x">#散歩</a></p>&mdash; 山田 (@yamada) <a href="#">2026</a></blockquote>' }) };
     if (url.startsWith('https://www.youtube.com/oembed')) return { body: JSON.stringify({ title: '3Dプリンタ入門', author_name: 'ものづくりch' }) };
-    if (url === 'https://example.com/a') return { body: '<html><head><meta property="og:title" content="関係性のデザイン &amp; 実践"><title>x</title></head></html>' };
+    if (url === 'https://example.com/a') return { body: '<html><head><meta property="og:title" content="関係性のデザイン &amp; 実践"><meta content="/img/og.png" property="og:image"><title>x</title></head></html>' };
     if (url === 'https://example.com/b') return { body: '<title>\n  ただのタイトル  </title>' };
     return { code: 404 };
   } });
@@ -205,10 +205,21 @@ test('ハブ: タイトルのないURLは、ページの見出し・Xのポス�
   assert.ok(calls.some(u => u.includes(encodeURIComponent('https://twitter.com/yamada/status/123'))));
   const yt = get(hub.post({ token: hub.token, capture: { url: 'https://youtu.be/abc' } }).id);
   assert.equal(yt.body, '3Dプリンタ入門\n— ものづくりch');
-  // タイトルが来ていれば(Chrome拡張)取りに行かない。取れなくても受け取りは成功する
+  // 代表画像は絶対URLにして残す。http の画像や画像のないページは空
+  assert.equal(a.image, 'https://example.com/img/og.png');
+  assert.equal(a.imageTried, true);
+  // タイトルが来ていても(Chrome拡張)画像のためにページは読むが、本文は変えない
+  const t = get(hub.post({ token: hub.token, capture: { url: 'https://example.com/a', title: '拡張から' } }).id);
+  assert.equal(t.body, '');
+  assert.equal(t.image, 'https://example.com/img/og.png');
+  // タイトルも画像も来ていれば取りに行かない
   const n = calls.length;
-  hub.post({ token: hub.token, capture: { url: 'https://example.com/a', title: '拡張から' } });
+  hub.post({ token: hub.token, capture: { url: 'https://example.com/a', title: '拡張から', image: 'https://cdn.example.com/x.jpg' } });
   assert.equal(calls.length, n);
+  // アプリからの問い合わせ
+  assert.deepEqual(hub.post({ token: hub.token, meta: 'https://example.com/a' }), { ok: true, image: 'https://example.com/img/og.png', text: '関係性のデザイン & 実践' });
+  assert.equal(hub.post({ token: hub.token, meta: 'javascript:alert(1)' }).ok, false);
+  assert.equal(hub.post({ token: 'x', meta: 'https://example.com/a' }).error, 'unauthorized');
   assert.equal(get(hub.post({ token: hub.token, capture: { url: 'https://example.com/404' } }).id).body, '');
 });
 
@@ -282,4 +293,43 @@ test('sortActionList と inDueWindow', async () => {
   assert.equal(inDueWindow({}, 'none', t), true);
   assert.equal(inDueWindow({}, 'week', t), false);
   assert.equal(inDueWindow({}, '', t), true);
+});
+
+test('youtubeId と thumbOf', async () => {
+  const { youtubeId, thumbOf, needsImage } = await import('../js/core.js');
+  assert.equal(youtubeId('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1'), 'dQw4w9WgXcQ');
+  assert.equal(youtubeId('https://youtu.be/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(youtubeId('https://www.youtube.com/shorts/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(youtubeId('https://example.com/'), '');
+  assert.deepEqual(thumbOf({ kind: 'photo' }), { photo: true });
+  assert.deepEqual(thumbOf({ kind: 'video', url: 'https://youtu.be/dQw4w9WgXcQ' }), { src: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg' });
+  assert.deepEqual(thumbOf({ kind: 'url', url: 'https://a.jp', image: 'https://a.jp/og.png' }), { src: 'https://a.jp/og.png' });
+  assert.equal(thumbOf({ kind: 'url', url: 'https://a.jp', image: 'http://a.jp/og.png' }), null);
+  assert.equal(thumbOf({ kind: 'memo' }), null);
+  assert.equal(needsImage({ kind: 'url', url: 'https://a.jp' }), true);
+  assert.equal(needsImage({ kind: 'url', url: 'https://a.jp', imageTried: true }), false);
+  assert.equal(needsImage({ kind: 'video', url: 'https://youtu.be/dQw4w9WgXcQ', title: 'x' }), false);
+  assert.equal(needsImage({ kind: 'video', url: 'https://youtu.be/dQw4w9WgXcQ' }), true); // 題名がまだ
+  assert.equal(needsImage({ kind: 'url', url: 'https://a.jp', image: 'https://a.jp/i.png', title: 'x' }), false);
+});
+
+test('sigil: 同じタグは同じ点、つながった二枚は同じ線', async () => {
+  const { sigil, sigilSvg } = await import('../js/core.js');
+  const a = sigil({ id: 'a', tags: ['t1', 't2'] }, { projectIds: ['p1'], linkIds: ['b'] });
+  const b = sigil({ id: 'b', tags: ['t2', 't1'] }, { projectIds: ['p1'], linkIds: ['a'] });
+  assert.deepEqual(a, b);
+  const c = sigil({ id: 'c', tags: [] });
+  assert.deepEqual(c, { dots: [], arcs: [], ticks: [] });
+  assert.match(sigilSvg(c), /sigil--empty/);
+  assert.match(sigilSvg(a), /<circle cx=/);
+});
+
+test('tagSlots: タグ同士は重ならず、あとから増えても先のタグの位置は変わらない', async () => {
+  const { tagSlots } = await import('../js/core.js');
+  const tags = Array.from({ length: 20 }, (_, i) => ({ id: 't' + i, createdAt: `2026-01-${String(i + 1).padStart(2, '0')}` }));
+  const a = tagSlots(tags.slice(0, 10));
+  assert.equal(new Set(a.values()).size, 10);
+  const b = tagSlots(tags);
+  assert.equal(new Set(b.values()).size, 20);
+  for (const [id, s] of a) assert.equal(b.get(id), s);
 });
