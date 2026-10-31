@@ -1,0 +1,14 @@
+body { width: 340px; margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; color: #1c1c1e; background: #f2f2f7; }
+main { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+input, textarea { font: inherit; padding: 8px 10px; border: 1px solid #d1d1d6; border-radius: 8px; background: #fff; color: inherit; resize: vertical; }
+button { font: inherit; padding: 8px 12px; border-radius: 8px; border: none; background: #e5e5ea; cursor: pointer; }
+button.primary { background: #ff9f0a; color: #fff; font-weight: 600; }
+#msg { margin: 0; min-height: 1.5em; color: #3a3a3c; }
+details label { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; font-size: 12px; color: #636366; }
+.note { font-size: 12px; color: #636366; }
+@media (prefers-color-scheme: dark) {
+  body { background: #1c1c1e; color: #f2f2f7; }
+  input, textarea { background: #2c2c2e; border-color: #3a3a3c; }
+  button { background: #3a3a3c; color: #f2f2f7; }
+  #msg, details label, .note { color: #aeaeb2; }
+}
