@@ -265,7 +265,6 @@ async function renderAll() {
   // 消されたタグやプロジェクトで絞ったままにならないように
   if (state.tagFilter && !tagList.some(t => t.id === state.tagFilter)) state.tagFilter = '';
   if (state.projectFilter && !projList.some(p => p.id === state.projectFilter)) state.projectFilter = '';
-  const any = state.kindFilter || state.tagFilter || state.projectFilter || state.query;
   $view.innerHTML = `
     <div class="pad"><input class="search-field" id="q" type="search" placeholder="検索(語・#タグ)" value="${esc(state.query)}" aria-label="検索"></div>
     <div class="filters" role="group" aria-label="種類で絞る">${FILTERS.map(([k, l]) => `<button class="kind ${state.kindFilter === k ? 'is-active' : ''}" data-k="${k}" aria-pressed="${state.kindFilter === k}">${l}</button>`).join('')}</div>
@@ -274,7 +273,7 @@ async function renderAll() {
       <div class="row"><label for="f-proj">プロジェクト</label><select id="f-proj"><option value="">すべて</option>${projList.map(p => `<option value="${esc(p.id)}" ${p.id === state.projectFilter ? 'selected' : ''}>${esc(p.title)}${p.status === 'closed' ? '(閉じた)' : ''}</option>`).join('')}</select></div>
       <div class="row"><label for="f-sort">並び</label><select id="f-sort">${Object.entries(SORTS).map(([k, l]) => `<option value="${k}" ${k === state.sort ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
-    <div class="list-tools"><span class="small muted" id="count"></span>${any ? '<button class="btn btn--small btn--plain" id="f-clear">条件を外す</button>' : ''}</div>
+    <div class="list-tools"><span class="small muted" id="count"></span><button class="btn btn--small btn--plain" id="f-clear" hidden>条件を外す</button></div>
     <div id="results"></div>`;
   const draw = () => {
     const names = tagNames();
@@ -285,7 +284,10 @@ async function renderAll() {
       .filter(c => !state.tagFilter || (c.tags || []).includes(state.tagFilter))
       .filter(c => !inProj || inProj.has(c.id))
       .filter(c => matches(c, state.query, names)), state.sort);
+    // 検索語は再描画せずに変わるので、絞り込み中かどうかは描くたびに見る
+    const any = !!(state.kindFilter || state.tagFilter || state.projectFilter || state.query.trim());
     document.getElementById('count').textContent = any ? `${list.length}件` : '';
+    document.getElementById('f-clear').hidden = !any;
     document.getElementById('results').innerHTML = list.length
       ? `<ul class="list list--inset items">${list.slice(0, state.shown).map(c => cardRow(c, { names, filterable: true, links })).join('')}</ul>
          ${list.length > state.shown ? `<div class="actions"><button class="btn btn--plain" id="more">もっと見る</button></div>` : ''}`
@@ -302,8 +304,7 @@ async function renderAll() {
   document.getElementById('f-tag').addEventListener('change', e => { state.tagFilter = e.target.value; state.shown = 100; renderAll(); });
   document.getElementById('f-proj').addEventListener('change', e => { state.projectFilter = e.target.value; state.shown = 100; renderAll(); });
   document.getElementById('f-sort').addEventListener('change', e => { state.sort = e.target.value; draw(); });
-  const clear = document.getElementById('f-clear');
-  if (clear) clear.addEventListener('click', () => { Object.assign(state, { query: '', kindFilter: '', tagFilter: '', projectFilter: '', shown: 100 }); renderAll(); });
+  document.getElementById('f-clear').addEventListener('click', () => { Object.assign(state, { query: '', kindFilter: '', tagFilter: '', projectFilter: '', shown: 100 }); renderAll(); });
   draw();
 }
 
