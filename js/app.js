@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, SORTS, PROJECT_COLORS, colorVar, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
+import { KINDS, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -13,6 +13,11 @@ const state = {
   projectFilter: '',
   sort: 'created',
   shown: 100,
+  // アクション画面の条件
+  actTag: '',
+  actProject: '',
+  actDue: '',
+  actSort: 'due',
 };
 
 const $view = document.getElementById('view');
@@ -46,6 +51,9 @@ function celebrate(el) {
     setTimeout(() => d.remove(), 700);
   }
 }
+
+// 期日の短い表示。今年なら月/日、ほかの年は年も付ける
+const shortDue = d => d.slice(0, 4) === today().slice(0, 4) ? d.slice(5).replace('-', '/') : d.replace(/-/g, '/');
 
 function today() {
   const d = new Date();
@@ -185,8 +193,14 @@ async function shrink(file, max = 1600) {
 let linkCache = null;
 const links = () => (linkCache ||= linkIndex(state.cards));
 // カードが属するプロジェクトの色を1つの点で。複数なら円を塗り分ける
+// カードが属するプロジェクト: つないだプロジェクトと、手順なら持ち主のプロジェクト
+function projectsOf(card, idx = links()) {
+  const ids = new Set(idx.get(card.id) || []);
+  if (card.kind === 'step' && card.project) ids.add(card.project);
+  return [...ids].map(byId).filter(p => p && !p.deleted && p.kind === 'project');
+}
 function projectDot(card, idx = links()) {
-  const ps = [...(idx.get(card.id) || [])].map(byId).filter(p => p && !p.deleted && p.kind === 'project' && p.color);
+  const ps = projectsOf(card, idx).filter(p => p.color);
   const fill = dotFill(ps.map(p => p.color));
   return fill ? `<span class="pdot" style="background:${fill}" role="img" aria-label="${esc(ps.map(p => p.title).join('、'))}"></span>` : '';
 }
@@ -202,7 +216,7 @@ function tagChips(card, names = tagNames()) {
 // filterable: タグとプロジェクトを押せるボタンにする(「すべて」の一覧)。リンクの中にボタンを入れないよう、行の下側を <a> の外に出す
 function cardRow(card, { names = tagNames(), inboxButton = false, filterable = false } = {}) {
   const snippet = card.title ? (card.body || card.quote || '') : (card.body || '').split('\n').slice(1).join(' ');
-  const action = card.action && !card.action.done ? `<span class="badge${isOverdue(card.action, today()) ? ' badge--warn' : ''}">アクション${card.action.due ? ` ${esc(card.action.due.slice(5).replace('-', '/'))}` : ''}</span>` : '';
+  const action = card.action && !card.action.done ? `<span class="badge${isOverdue(card.action, today()) ? ' badge--warn' : ''}">アクション${card.action.due ? ` ${esc(shortDue(card.action.due))}` : ''}</span>` : '';
   const head = `<span class="item__kind kind-${esc(card.kind)}">${esc(KINDS[card.kind] || 'メモ')}</span>
       <span class="item__title">${projectDot(card)}${esc(displayTitle(card))}</span>
       ${snippet.trim() ? `<span class="item__snippet">${esc(snippet.trim().slice(0, 140))}</span>` : ''}`;
@@ -921,25 +935,65 @@ async function renderStep(st) {
 }
 
 // ---------- アクション ----------
+const ACT_KEYS = ['actTag', 'actProject', 'actDue', 'actSort'];
+function rememberActFilters() {
+  db.setMeta('actionFilters', Object.fromEntries(ACT_KEYS.map(k => [k, state[k]]))).catch(() => {});
+}
+
 async function renderActions() {
+  rememberActFilters();
   setTab('actions');
   setTitle('アクション');
-  const { open, done } = sortActions(forActionList(state.cards));
+  const all = forActionList(state.cards);
   const t = today();
-  // 手順ならプロジェクト名を、単発のアクションなら元のカードの見出しを添える
-  const sub = c => c.kind === 'step' ? `${(byId(c.project) || {}).title || ''} の手順` : displayTitle(c);
-  const row = c => `<li class="item item--action" data-id="${esc(c.id)}">
+  const names = tagNames();
+  const tagList = tags().sort((a, b) => a.title.localeCompare(b.title, 'ja'));
+  const projList = projects().sort((a, b) => (a.status === 'closed') - (b.status === 'closed') || a.title.localeCompare(b.title, 'ja'));
+  if (state.actTag && !tagList.some(x => x.id === state.actTag)) state.actTag = '';
+  if (state.actProject && !projList.some(p => p.id === state.actProject)) state.actProject = '';
+  if (!ACTION_SORTS[state.actSort]) state.actSort = 'due';
+  const list = all
+    .filter(c => !state.actTag || (c.tags || []).includes(state.actTag))
+    .filter(c => !state.actProject || projectsOf(c).some(p => p.id === state.actProject))
+    .filter(c => inDueWindow(c.action, state.actDue, t));
+  const { open, done } = sortActionList(list, state.actSort);
+  const any = !!(state.actTag || state.actProject || state.actDue);
+  const row = c => {
+    const projs = projectsOf(c);
+    const projBtns = projs.map(p => `<button class="chip-tag chip-project" data-fproj="${esc(p.id)}" aria-label="${esc(p.title)} で絞る">${colorDot(p)}${esc(p.title)}</button>`).join('');
+    const tagBtns = (c.tags || []).filter(x => names.get(x)).map(x => `<button class="chip-tag" data-ftag="${esc(x)}" aria-label="#${esc(names.get(x))} で絞る">#${esc(names.get(x))}</button>`).join('');
+    const due = c.action.due ? `<span class="badge${isOverdue(c.action, t) ? ' badge--warn' : ''}">${esc(shortDue(c.action.due))}</span>` : '';
+    // 単発のアクションは元のカードの見出しを添える(手順はプロジェクトの札で分かる)
+    const src = c.kind === 'step' ? '' : displayTitle(c);
+    return `<li class="item item--action" data-id="${esc(c.id)}">
     <input type="checkbox" class="item__check" ${c.action.done ? 'checked' : ''} aria-label="${esc(c.action.text)} を完了">
-    <a class="item__main" href="#card/${esc(c.id)}">
-      <span class="item__title">${esc(c.action.text || '(やること未記入)')}</span>
-      <span class="item__snippet${c.kind === 'step' ? ' kind-project' : ''}">${esc(sub(c))}</span>
-      ${c.action.due ? `<span class="item__meta"><span class="badge${isOverdue(c.action, t) ? ' badge--warn' : ''}">${esc(c.action.due)}</span></span>` : ''}
-    </a></li>`;
-  $view.innerHTML = open.length || done.length ? `
-    ${open.length ? `<ul class="list list--inset items">${open.map(row).join('')}</ul>` : '<div class="empty"><p class="empty__message">やることはありません</p></div>'}
+    <div class="item__body">
+      <a class="item__main item__main--top" href="#card/${esc(c.id)}">
+        <span class="item__title${c.action.done ? ' is-done' : ''}">${projectDot(c)}${esc(c.action.text || '(やること未記入)')}</span>
+        ${src && src !== c.action.text ? `<span class="item__snippet">${esc(src)}</span>` : ''}
+      </a>
+      ${due || projBtns || tagBtns ? `<div class="item__meta item__meta--below">${due}<span class="chips">${projBtns}${tagBtns}</span></div>` : '<div class="item__gap"></div>'}
+    </div></li>`;
+  };
+  const sel = (id, cls, label, opts, cur) => `<select id="${id}" class="pill-select${cur && cls ? ' is-set' : ''}" aria-label="${label}">${opts}</select>`;
+  $view.innerHTML = all.length ? `
+    <div class="selects" role="group" aria-label="アクションを絞る、並べ替え">
+      ${sel('a-due', true, '期日で絞る', `<option value="">◷ 期日</option>${Object.entries(DUE_WINDOWS).map(([k, l]) => `<option value="${k}" ${k === state.actDue ? 'selected' : ''}>${l}</option>`).join('')}`, state.actDue)}
+      ${sel('a-proj', true, 'プロジェクトで絞る', `<option value="">◇ プロジェクト</option>${projList.map(p => `<option value="${esc(p.id)}" ${p.id === state.actProject ? 'selected' : ''}>${esc(p.title)}${p.status === 'closed' ? '(閉じた)' : ''}</option>`).join('')}`, state.actProject)}
+      ${sel('a-tag', true, 'タグで絞る', `<option value=""># タグ</option>${tagList.map(x => `<option value="${esc(x.id)}" ${x.id === state.actTag ? 'selected' : ''}>#${esc(x.title)}</option>`).join('')}`, state.actTag)}
+      ${sel('a-sort', false, '並び', Object.entries(ACTION_SORTS).map(([k, l]) => `<option value="${k}" ${k === state.actSort ? 'selected' : ''}>↕ ${l}</option>`).join(''), '')}
+    </div>
+    ${any ? `<div class="list-tools"><span class="small muted">${open.length}件</span><button class="btn btn--small btn--plain" id="a-clear">条件を外す</button></div>` : ''}
+    ${open.length ? `<ul class="list list--inset items">${open.map(row).join('')}</ul>` : `<div class="empty"><p class="empty__message">${any ? 'この条件のやることはありません' : 'やることはありません'}</p></div>`}
     ${done.length ? `<details class="done-list"><summary class="pad">完了したもの</summary><ul class="list list--inset items">${done.slice(0, 100).map(row).join('')}</ul></details>` : ''}
     <p class="pad small muted">カードを開いて「アクション」から追加します。プロジェクトの手順は、期限を付けたものだけがここに出ます。</p>`
     : `<div class="empty"><p class="empty__message">アクションはまだありません。カードを開いて追加するか、プロジェクトの手順に期限を付けると、ここに出ます。</p></div>`;
+  const on = (id, key) => { const el = document.getElementById(id); if (el) el.addEventListener('change', e => { state[key] = e.target.value; renderActions(); }); };
+  on('a-due', 'actDue'); on('a-proj', 'actProject'); on('a-tag', 'actTag'); on('a-sort', 'actSort');
+  const clear = document.getElementById('a-clear');
+  if (clear) clear.addEventListener('click', () => { Object.assign(state, { actTag: '', actProject: '', actDue: '' }); renderActions(); });
+  $view.querySelectorAll('[data-ftag]').forEach(b => b.addEventListener('click', () => { state.actTag = b.dataset.ftag; renderActions(); scrollTo(0, 0); }));
+  $view.querySelectorAll('[data-fproj]').forEach(b => b.addEventListener('click', () => { state.actProject = b.dataset.fproj; renderActions(); scrollTo(0, 0); }));
   $view.querySelectorAll('.item__check').forEach(cb => cb.addEventListener('change', async () => {
     const card = byId(cb.closest('.item').dataset.id);
     if (cb.checked) celebrate(cb);
@@ -1068,6 +1122,8 @@ async function onRemoteChange() {
   await load();
   const saved = await db.getMeta('allFilters', null).catch(() => null);
   if (saved) for (const k of FILTER_KEYS) if (typeof saved[k] === 'string') state[k] = saved[k];
+  const savedAct = await db.getMeta('actionFilters', null).catch(() => null);
+  if (savedAct) for (const k of ACT_KEYS) if (typeof savedAct[k] === 'string') state[k] = savedAct[k];
   db.requestPersist();
   // Safariのタブはホーム画面のアプリと保存場所が別で、使わないと7日で消える
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

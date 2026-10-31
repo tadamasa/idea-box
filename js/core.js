@@ -180,6 +180,32 @@ export function sortActions(cards) {
   return { open, done };
 }
 
+// アクションの並べ替え。完了したものはいつも終えた順
+export const ACTION_SORTS = { due: '期日の近い順', created: '新しい順', oldest: '古い順', updated: '最近さわった順' };
+export function sortActionList(list, sort = 'due') {
+  const { open, done } = sortActions(list);
+  const by = { created: (a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''), oldest: (a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''), updated: (a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '') }[sort];
+  if (by) open.sort(by);
+  return { open, done };
+}
+
+// 期日での絞り込み。overdue: 期限切れ / today: 今日まで / week: 7日以内 / none: 期日なし
+export const DUE_WINDOWS = { overdue: '期限切れ', today: '今日まで', week: '7日以内', none: '期日なし' };
+export function inDueWindow(action, win, today) {
+  if (!win) return true;
+  const due = action && action.due;
+  if (win === 'none') return !due;
+  if (!due) return false;
+  if (win === 'overdue') return due < today;
+  if (win === 'today') return due <= today;
+  if (win === 'week') {
+    const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() + 7);
+    const p = n => String(n).padStart(2, '0');
+    return due <= `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  return true;
+}
+
 // アクション画面に出すもの: 単発のアクションはすべて、プロジェクトの手順は期限を付けたものだけ
 export function forActionList(cards) {
   return cards.filter(c => !c.deleted && c.action && (c.kind !== 'step' || c.action.due));

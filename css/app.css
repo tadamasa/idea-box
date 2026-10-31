@@ -173,13 +173,6 @@ button.chip-tag { min-height: 24px; padding: 1px 8px; font-size: 12px; line-heig
   .btn:active, button.chip-tag:active, .item__done:active { transform: none; }
 }
 
-/* PCの広い画面では、一覧を2列のカードにして一度に見渡せるようにする */
-@media (min-width: 1100px) {
-  .content, .nav__bar, .nav__title-large, .tab-warning { max-width: 1080px; }
-  .list--inset.items:not(#steps) { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); background: none; border-radius: 0; overflow: visible; }
-  .list--inset.items:not(#steps) > .item { background-color: var(--bg-grouped-secondary); border-radius: var(--r-list); overflow: hidden; }
-  .list--inset.items:not(#steps) > .item::after { display: none; }
-}
 
 /* すべて: 絞り込みは横一列の小さな選択にまとめ、一覧を上に上げる */
 .filters { padding: var(--space-2) var(--space-4) var(--space-1); }
@@ -200,3 +193,22 @@ button.chip-tag { min-height: 24px; padding: 1px 8px; font-size: 12px; line-heig
 .swatch.is-on { box-shadow: 0 0 0 2px var(--bg-grouped-secondary), 0 0 0 4px var(--color-label); }
 .swatch--none { background: linear-gradient(135deg, transparent 46%, var(--color-label-tertiary) 46% 54%, transparent 54%); border: 1px solid var(--color-separator-opaque); box-sizing: border-box; }
 .list-section__header .count { font-weight: 400; color: var(--color-label-tertiary); margin-left: 4px; }
+
+/* 一覧は1枚ずつのカードとして並べる */
+.list--inset.items { display: flex; flex-direction: column; gap: var(--space-2); background: none; border-radius: 0; overflow: visible; }
+.list--inset.items > .item { background-color: var(--bg-grouped-secondary); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 2px 8px rgb(0 0 0 / 0.04); }
+.list--inset.items > .item::after { display: none; }
+.item__gap { height: 6px; }
+@media (prefers-color-scheme: dark) {
+  .list--inset.items > .item { box-shadow: none; border: 1px solid rgb(255 255 255 / 0.06); }
+}
+.done-list .list--inset.items > .item { box-shadow: none; opacity: 0.8; }
+.item--action .item__check { align-self: flex-start; margin-top: 12px; }
+.item--action .item__main--top { padding-left: var(--space-2); }
+.item--action .item__meta--below { padding-left: var(--space-2); }
+
+/* PCの広い画面では、一覧を2列のカードにして一度に見渡せるようにする(手順は順番があるので1列) */
+@media (min-width: 1100px) {
+  .content, .nav__bar, .nav__title-large, .tab-warning { max-width: 1080px; }
+  .list--inset.items:not(#steps) { display: grid; grid-template-columns: 1fr 1fr; }
+}
