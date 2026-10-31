@@ -91,3 +91,17 @@ svg.ic { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-wid
 .danger { color: var(--color-destructive); }
 .tab-warning { margin: 0 var(--space-4) var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--r-card); background-color: color-mix(in srgb, var(--sys-orange) 14%, transparent); font-size: 13px; line-height: 18px; }
 @media (min-width: 900px) { .tab-warning { margin-left: auto; margin-right: auto; } }
+
+/* プロジェクト */
+.kind-project { color: var(--sys-indigo, var(--sys-purple)); text-decoration: none; }
+.chip-project { background-color: color-mix(in srgb, var(--sys-indigo, var(--sys-purple)) 12%, transparent); color: var(--sys-indigo, var(--sys-purple)); }
+.item__title.is-done { color: var(--color-label-secondary); text-decoration: line-through; }
+.item__tools { flex: none; display: flex; align-items: center; padding-right: var(--space-2); align-self: center; }
+.item__tools button { width: 36px; min-height: var(--hit); color: var(--color-accent); font-size: 17px; }
+.item__tools button:disabled { color: var(--color-label-quaternary, var(--color-label-tertiary)); cursor: default; }
+.card--after-list { margin-top: var(--space-3); }
+.suggest__row { justify-content: flex-start; }
+.suggest__row span { flex: 1; font-size: 15px; line-height: 21px; padding: var(--space-2) 0; }
+.row select#c-project, .row select#p-link { text-align: left; color: var(--color-accent); }
+.nav__action svg.ic { width: 24px; height: 24px; }
+.item--action .item__check { align-self: center; }

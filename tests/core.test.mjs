@@ -1,7 +1,7 @@
 // npm test で実行。画面に触れない処理と、アイデアハブ(Code.gs)の動きを確かめる。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue } from '../js/core.js';
+import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps } from '../js/core.js';
 import { splitOcr } from '../js/gemini.js';
 import { loadHub } from './gas-mock.mjs';
 
@@ -83,6 +83,57 @@ test('アクションは期限の近い順、期限なしは後ろ、完了は�
   assert.deepEqual(done.map(c => c.id), ['4']);
   assert.ok(isOverdue({ due: '2026-10-30', done: false }, '2026-10-31'));
   assert.ok(!isOverdue({ due: '2026-10-30', done: true }, '2026-10-31'));
+});
+
+test('プロジェクトと手順は情報の一覧に混ざらず、入力からも作られない', () => {
+  assert.equal(detectKind({ text: 'x', kind: 'project' }), 'memo');
+  assert.ok(isInfo({ kind: 'memo' }));
+  assert.ok(!isInfo({ kind: 'project' }) && !isInfo({ kind: 'step' }) && !isInfo({ kind: 'tag' }) && !isInfo({ kind: 'memo', deleted: true }));
+});
+
+test('つながりは片方に書くだけで、両方向から見える', () => {
+  const cards = [
+    { id: 'p1', kind: 'project', links: ['p2'] },
+    { id: 'p2', kind: 'project', links: [] },
+    { id: 'm', kind: 'memo', links: ['p1'] },
+    { id: 'x', kind: 'memo', links: ['p1'], deleted: true },
+  ];
+  assert.deepEqual(linkedIds(cards, 'p1').sort(), ['m', 'p2']);
+  assert.deepEqual(linkedIds(cards, 'p2'), ['p1']);
+});
+
+test('手順は order 順に並び、移すと移した先の最後に付く', () => {
+  const s1 = newStep({ id: 's1', projectId: 'p1', text: ' 相場を調べる ', order: 2, now: 'a' });
+  const s2 = newStep({ id: 's2', projectId: 'p1', text: '試乗する', order: 1, now: 'b' });
+  const s3 = newStep({ id: 's3', projectId: 'p2', text: '見積もり', order: 1, now: 'c' });
+  const cards = [s1, s2, s3];
+  assert.equal(s1.title, '相場を調べる');
+  assert.equal(s1.action.text, '相場を調べる');
+  assert.deepEqual(projectSteps(cards, 'p1').map(s => s.id), ['s2', 's1']);
+  s1.project = 'p2'; s1.order = nextOrder(projectSteps(cards, 'p2'));
+  assert.deepEqual(projectSteps(cards, 'p2').map(s => s.id), ['s3', 's1']);
+  assert.equal(nextOrder([]), 1);
+  s3.action.done = true;
+  assert.deepEqual(stepProgress(projectSteps(cards, 'p2')), { done: 1, all: 2 });
+});
+
+test('アクション画面には、単発のアクションと期限付きの手順だけが出る', () => {
+  const cards = [
+    { id: 'a', kind: 'memo', action: { text: 'x', due: null, done: false } },
+    newStep({ id: 'b', projectId: 'p', text: '期限なし', order: 1 }),
+    { ...newStep({ id: 'c', projectId: 'p', text: '期限あり', order: 2 }), action: { text: '期限あり', due: '2026-11-05', done: false } },
+    { id: 'd', kind: 'memo', action: null },
+  ];
+  assert.deepEqual(forActionList(cards).map(c => c.id), ['a', 'c']);
+});
+
+test('新しいプロジェクトは進行中で、手順案は重なりを除いてそろえる', () => {
+  const p = newProject({ id: 'p', title: ' 車を買い替える ', goal: '来春までに納車' });
+  assert.equal(p.title, '車を買い替える');
+  assert.equal(p.status, 'active');
+  assert.deepEqual(parseSteps('["予算を決める","試乗する","予算を決める"]', ['試乗する']), ['予算を決める']);
+  assert.deepEqual(parseSteps('```json\n{"steps":[{"text":"下取りを査定する"}]}\n```'), ['下取りを査定する']);
+  assert.deepEqual(parseSteps('1. 書類をそろえる\n・転出届を出す'), ['書類をそろえる', '転出届を出す']);
 });
 
 test('写真の読み取り結果を見出しと本文に分ける', () => {

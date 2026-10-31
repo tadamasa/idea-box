@@ -8,7 +8,12 @@ export const KINDS = {
   photo: '写真',
   summary: 'まとめ',
   tag: 'タグ',
+  project: 'プロジェクト',
+  step: '手順',
 };
+
+// 受信箱・すべて・近いカードに並べる「情報」のカードか(タグ・プロジェクト・手順は別の画面で扱う)
+export const isInfo = c => !c.deleted && c.kind !== 'tag' && c.kind !== 'project' && c.kind !== 'step';
 
 const URL_RE = /https?:\/\/[^\s<>"'「」]+/i;
 const VIDEO_RE = /^(https?:\/\/)?((www|m)\.)?(youtube\.com|youtu\.be|vimeo\.com|nicovideo\.jp)\//i;
@@ -20,7 +25,7 @@ export function extractUrl(text) {
 
 // 入力内容から種類を推し量る。選ぶ手間を省くためのもので、あとで変えられる。
 export function detectKind({ text = '', url = '', kind = '' } = {}) {
-  if (kind && KINDS[kind] && kind !== 'tag') return kind;
+  if (kind && KINDS[kind] && !['tag', 'project', 'step'].includes(kind)) return kind;
   const u = url || extractUrl(text);
   if (u && VIDEO_RE.test(u)) return 'video';
   if (u) return 'url';
@@ -121,7 +126,7 @@ export function nearCards(cards, target, { limit = 6 } = {}) {
   const grams = bigrams([target.title, target.body, target.quote].join(' '));
   const out = [];
   for (const c of cards) {
-    if (c.id === target.id || c.deleted || c.kind === 'tag') continue;
+    if (c.id === target.id || !isInfo(c)) continue;
     const shared = (c.tags || []).filter(t => tags.has(t));
     const sim = jaccard(grams, bigrams([c.title, c.body, c.quote].join(' ')));
     const score = shared.length + sim * 2;
@@ -150,6 +155,76 @@ export function sortActions(cards) {
   });
   done.sort((a, b) => (b.action.doneAt || '').localeCompare(a.action.doneAt || ''));
   return { open, done };
+}
+
+// アクション画面に出すもの: 単発のアクションはすべて、プロジェクトの手順は期限を付けたものだけ
+export function forActionList(cards) {
+  return cards.filter(c => !c.deleted && c.action && (c.kind !== 'step' || c.action.due));
+}
+
+// ---------- プロジェクト ----------
+// つながりは片方のカードの links に書くだけにし、表示は両方向から集める。
+// 両方に書き込むと、2台の端末で同時に変えたときに片側だけ残ることがあるため。
+export function linkedIds(cards, id) {
+  const me = cards.find(c => c.id === id);
+  const out = new Set(me && !me.deleted ? me.links || [] : []);
+  for (const c of cards) if (!c.deleted && (c.links || []).includes(id)) out.add(c.id);
+  out.delete(id);
+  return [...out];
+}
+
+// プロジェクトの手順を order の順に。手順はそれぞれカードで、project に属するプロジェクトのidを持つ
+export function projectSteps(cards, projectId) {
+  return cards.filter(c => !c.deleted && c.kind === 'step' && c.project === projectId)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || (a.createdAt || '').localeCompare(b.createdAt || ''));
+}
+
+export function nextOrder(steps) {
+  return steps.length ? Math.max(...steps.map(s => s.order ?? 0)) + 1 : 1;
+}
+
+export function newStep({ id, projectId, text, order, due = null, now = new Date().toISOString() }) {
+  const t = String(text || '').trim();
+  return {
+    id, kind: 'step', title: t, body: '', url: '', quote: '', tags: [], links: [], inbox: false,
+    project: projectId, order,
+    action: { text: t, due: due || null, done: false, doneAt: null, doneNote: '' },
+    createdAt: now, updatedAt: now,
+  };
+}
+
+export function newProject({ id, title, goal = '', now = new Date().toISOString() }) {
+  return {
+    id, kind: 'project', title: String(title || '').trim(), body: '', goal: String(goal || '').trim(), due: null,
+    status: 'active', closeNote: '', closedAt: null, url: '', quote: '', tags: [], links: [], inbox: false, action: null,
+    createdAt: now, updatedAt: now,
+  };
+}
+
+// 手順の進み具合(例: 2/5)。件数で急かさないよう、画面では小さく出すだけにする
+export function stepProgress(steps) {
+  return { done: steps.filter(s => s.action && s.action.done).length, all: steps.length };
+}
+
+// Gemini が返した手順案を、短い文の配列にそろえる。JSONでも箇条書きでも受け取る
+export function parseSteps(text, existing = []) {
+  let list = [];
+  const raw = String(text || '').trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+  try {
+    const j = JSON.parse(raw);
+    list = (Array.isArray(j) ? j : j.steps || []).map(x => typeof x === 'string' ? x : x && (x.text || x.step) || '');
+  } catch {
+    list = raw.split('\n').map(l => l.replace(/^\s*(?:[-*・]|\d+[.)、])\s*/, ''));
+  }
+  const seen = new Set(existing.map(e => normTag(e)));
+  const out = [];
+  for (const t of list.map(x => String(x).trim()).filter(Boolean)) {
+    const k = normTag(t);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(t.slice(0, 120));
+  }
+  return out;
 }
 
 export function isOverdue(action, today) {
