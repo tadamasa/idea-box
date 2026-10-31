@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, SORTS, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
+import { KINDS, SORTS, PROJECT_COLORS, colorVar, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -30,6 +30,21 @@ function toast(msg, ms = 2600) {
   el.textContent = msg;
   document.body.append(el);
   setTimeout(() => el.remove(), ms);
+}
+
+// アクションや手順を終えたとき、チェックの周りに小さな粒を散らす(動きを減らす設定なら何もしない)
+function celebrate(el) {
+  if (!el || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = el.getBoundingClientRect();
+  const colors = ['#FF9F0A', '#34C759', '#0A84FF', '#FF375F', '#BF5AF2', '#FFD60A'];
+  for (let i = 0; i < 14; i++) {
+    const d = document.createElement('i');
+    d.className = 'spark';
+    const a = (Math.PI * 2 * i) / 14, dist = 26 + Math.random() * 22;
+    d.style.cssText = `left:${r.left + r.width / 2}px;top:${r.top + r.height / 2}px;background:${colors[i % colors.length]};--dx:${Math.cos(a) * dist}px;--dy:${Math.sin(a) * dist}px`;
+    document.body.append(d);
+    setTimeout(() => d.remove(), 700);
+  }
 }
 
 function today() {
@@ -78,6 +93,7 @@ function tagUse() {
 
 async function load() {
   state.cards = await db.getAll('cards');
+  linkCache = null;
 }
 
 async function save(card) {
@@ -85,6 +101,7 @@ async function save(card) {
   await db.put('cards', card);
   const i = state.cards.findIndex(c => c.id === card.id);
   if (i >= 0) state.cards[i] = card; else state.cards.push(card);
+  linkCache = null;
 }
 
 async function addCard(input) {
@@ -164,6 +181,17 @@ async function shrink(file, max = 1600) {
 }
 
 // ---------- 共通の部品 ----------
+// つながりの索引は画面を描くたびに1回だけ作る(保存や画面切り替えで作り直す)
+let linkCache = null;
+const links = () => (linkCache ||= linkIndex(state.cards));
+// カードが属するプロジェクトの色を1つの点で。複数なら円を塗り分ける
+function projectDot(card, idx = links()) {
+  const ps = [...(idx.get(card.id) || [])].map(byId).filter(p => p && !p.deleted && p.kind === 'project' && p.color);
+  const fill = dotFill(ps.map(p => p.color));
+  return fill ? `<span class="pdot" style="background:${fill}" role="img" aria-label="${esc(ps.map(p => p.title).join('、'))}"></span>` : '';
+}
+const colorDot = p => p && p.color ? `<span class="pdot pdot--sm" style="background:${colorVar(p.color)}" aria-hidden="true"></span>` : '';
+
 function tagChips(card, names = tagNames()) {
   const list = (card.tags || []).map(t => names.get(t)).filter(Boolean);
   if (!list.length) return '';
@@ -172,24 +200,24 @@ function tagChips(card, names = tagNames()) {
 }
 
 // filterable: タグとプロジェクトを押せるボタンにする(「すべて」の一覧)。リンクの中にボタンを入れないよう、行の下側を <a> の外に出す
-function cardRow(card, { names = tagNames(), inboxButton = false, filterable = false, links = null } = {}) {
+function cardRow(card, { names = tagNames(), inboxButton = false, filterable = false } = {}) {
   const snippet = card.title ? (card.body || card.quote || '') : (card.body || '').split('\n').slice(1).join(' ');
   const action = card.action && !card.action.done ? `<span class="badge${isOverdue(card.action, today()) ? ' badge--warn' : ''}">アクション${card.action.due ? ` ${esc(card.action.due.slice(5).replace('-', '/'))}` : ''}</span>` : '';
   const head = `<span class="item__kind kind-${esc(card.kind)}">${esc(KINDS[card.kind] || 'メモ')}</span>
-      <span class="item__title">${esc(displayTitle(card))}</span>
+      <span class="item__title">${projectDot(card)}${esc(displayTitle(card))}</span>
       ${snippet.trim() ? `<span class="item__snippet">${esc(snippet.trim().slice(0, 140))}</span>` : ''}`;
   if (filterable) {
-    const projs = [...((links && links.get(card.id)) || [])].map(byId).filter(p => p && !p.deleted && p.kind === 'project');
+    const projs = [...(links().get(card.id) || [])].map(byId).filter(p => p && !p.deleted && p.kind === 'project');
     const tagBtns = (card.tags || []).filter(t => names.get(t)).map(t => `<button class="chip-tag" data-ftag="${esc(t)}" aria-label="#${esc(names.get(t))} で絞る">#${esc(names.get(t))}</button>`).join('');
-    const projBtns = projs.map(p => `<button class="chip-tag chip-project" data-fproj="${esc(p.id)}" aria-label="${esc(p.title)} で絞る">${esc(p.title)}</button>`).join('');
-    return `<li class="item" data-id="${esc(card.id)}">
+    const projBtns = projs.map(p => `<button class="chip-tag chip-project" data-fproj="${esc(p.id)}" aria-label="${esc(p.title)} で絞る">${colorDot(p)}${esc(p.title)}</button>`).join('');
+    return `<li class="item" data-id="${esc(card.id)}" data-kind="${esc(card.kind)}">
     <div class="item__body">
       <a class="item__main item__main--top" href="#card/${esc(card.id)}">${head}</a>
       <div class="item__meta item__meta--below">${esc(fmtDate(card.createdAt))}${action}${tagBtns || projBtns ? `<span class="chips">${projBtns}${tagBtns}</span>` : ''}</div>
     </div>
   </li>`;
   }
-  return `<li class="item" data-id="${esc(card.id)}">
+  return `<li class="item" data-id="${esc(card.id)}" data-kind="${esc(card.kind)}">
     <a class="item__main" href="#card/${esc(card.id)}">
       ${head}
       <span class="item__meta">${esc(fmtDate(card.createdAt))}${action}${tagChips(card, names)}</span>
@@ -204,11 +232,61 @@ function bindRows(root, after) {
     const card = byId(b.closest('.item').dataset.id);
     card.inbox = false;
     await save(card);
-    b.closest('.item').remove();
+    const li = b.closest('.item');
+    li.classList.add('is-leaving');
+    setTimeout(() => li.remove(), matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 220);
     toast('受信箱から出しました');
     if (after) after();
   }));
 }
+
+// 押して選ぶ欄。選んだものは塗りつぶし、もう一度押すと外れる。上の欄に文字を入れると絞り込み、なければ「作る」が出る
+// options: () => [{ id, label }]  selected: () => Set  onToggle(id, on)  onCreate(name) → 作ったid(任意)
+function pickerHtml(id, placeholder) {
+  return `<div class="picker" id="${id}"><input class="picker__filter" placeholder="${esc(placeholder)}" autocomplete="off" aria-label="${esc(placeholder)}"><div class="picker__chips" role="group"></div></div>`;
+}
+function mountPicker(id, { options, selected, onToggle, onCreate = null, prefix = '', kind = '' }) {
+  const root = document.getElementById(id);
+  if (!root) return;
+  const input = root.querySelector('.picker__filter');
+  const box = root.querySelector('.picker__chips');
+  const draw = () => {
+    const sel = selected();
+    const q = normTag(input.value);
+    const all = options();
+    const shown = all.filter(o => !q || normTag(o.label).includes(q))
+      .sort((a, b) => (sel.has(b.id) - sel.has(a.id)));
+    const exact = all.some(o => normTag(o.label) === q);
+    box.innerHTML = shown.map(o => `<button type="button" class="chip-tag chip-pick${kind ? ` chip-${kind}` : ''}${sel.has(o.id) ? ' is-on' : ''}" data-id="${esc(o.id)}" aria-pressed="${sel.has(o.id)}">${sel.has(o.id) ? '✓ ' : ''}${esc(prefix + o.label)}</button>`).join('')
+      + (q && !exact && onCreate ? `<button type="button" class="chip-tag chip-pick chip-new" data-new="1">＋ ${esc(prefix + input.value.trim().replace(/^#+/, ''))} を作る</button>` : '')
+      + (!shown.length && !(q && onCreate) ? '<span class="muted small">候補がありません</span>' : '');
+    box.querySelectorAll('[data-id]').forEach(b => b.addEventListener('click', async () => {
+      await onToggle(b.dataset.id, !selected().has(b.dataset.id));
+      draw();
+    }));
+    const nb = box.querySelector('[data-new]');
+    if (nb) nb.addEventListener('click', create);
+  };
+  const create = async () => {
+    const name = input.value.trim().replace(/^#+/, '');
+    if (!name || !onCreate) return;
+    const all = options();
+    const hit = all.find(o => normTag(o.label) === normTag(name));
+    if (hit) { if (!selected().has(hit.id)) await onToggle(hit.id, true); }
+    else await onCreate(name);
+    input.value = '';
+    draw();
+  };
+  input.addEventListener('input', draw);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); create(); } });
+  draw();
+  return { draw };
+}
+// つないだプロジェクトへのリンク(選んだあとに開けるように)
+function projectLinksText(list, empty = '') {
+  return list.length ? `開く: ${list.map(p => `<a class="kind-project" href="#project/${esc(p.id)}">${esc(p.title)}</a>`).join('、')}` : esc(empty);
+}
+const tagOptions = () => { const use = tagUse(); return tags().sort((a, b) => (use.get(b.id) || 0) - (use.get(a.id) || 0) || a.title.localeCompare(b.title, 'ja')).map(t => ({ id: t.id, label: t.title })); };
 
 // ---------- 受信箱(放り込む) ----------
 async function renderInbox() {
@@ -219,8 +297,7 @@ async function renderInbox() {
   $view.innerHTML = `
     <div class="card capture">
       <textarea class="field field--note" id="cap-text" placeholder="思いつき・URL・名言…なんでも&#10;音声はキーボードのマイクで" aria-label="放り込む内容"></textarea>
-      <input class="field field--tags" id="cap-tags" placeholder="#タグ(任意、空白区切り)" aria-label="タグ" autocomplete="off" list="tag-list">
-      <datalist id="tag-list">${tags().map(t => `<option value="${esc(t.title)}">`).join('')}</datalist>
+      <div class="field--tags">${pickerHtml('cap-tags', 'タグを選ぶ・新しく作る(任意)')}</div>
     </div>
     <div class="actions">
       <label class="btn btn--tinted" for="cap-photo">写真</label>
@@ -233,26 +310,31 @@ async function renderInbox() {
       : `<div class="empty"><p class="empty__message">受信箱は空です。思いついたことを上に放り込んでください。</p></div>`}
   `;
   const text = document.getElementById('cap-text');
-  const tagInput = document.getElementById('cap-tags');
+  // 放り込む前に選んだタグ(タグのid)
+  const capTags = new Set();
+  mountPicker('cap-tags', {
+    options: tagOptions, selected: () => capTags, prefix: '#',
+    onToggle: (tid, on) => { on ? capTags.add(tid) : capTags.delete(tid); },
+    onCreate: async name => { capTags.add((await ensureTag(name)).id); },
+  });
+  const capNames = () => [...capTags].map(byId).filter(t => t && !t.deleted).map(t => t.title);
   document.getElementById('cap-save').addEventListener('click', async () => {
     if (!text.value.trim()) { text.focus(); return; }
-    await addCard({ text: text.value, tags: splitTags(tagInput.value) });
+    const added = await addCard({ text: text.value, tags: capNames() });
     toast('受信箱に入れました');
-    renderInbox();
+    await renderInbox();
+    $view.querySelector(`.item[data-id="${added.id}"]`)?.classList.add('is-new');
   });
   document.getElementById('cap-photo').addEventListener('change', async e => {
     const file = e.target.files[0];
     if (!file) return;
-    const card = await addCard({ text: text.value, kind: 'photo', tags: splitTags(tagInput.value) });
+    const card = await addCard({ text: text.value, kind: 'photo', tags: capNames() });
     await db.put('images', { id: card.id, blob: await shrink(file) });
     location.hash = `#card/${card.id}`;
   });
   bindRows($view);
 }
 
-function splitTags(s) {
-  return String(s || '').split(/[\s,、]+/).map(x => x.replace(/^#+/, '').trim()).filter(Boolean);
-}
 
 // ---------- すべて(探す) ----------
 const FILTERS = [['', 'すべて'], ['memo', 'メモ'], ['url', 'Web'], ['video', '動画'], ['quote', '名言'], ['photo', '写真'], ['summary', 'まとめ'], ['action', 'アクション']];
@@ -275,17 +357,16 @@ async function renderAll() {
   $view.innerHTML = `
     <div class="pad"><input class="search-field" id="q" type="search" placeholder="検索(語・#タグ)" value="${esc(state.query)}" aria-label="検索"></div>
     <div class="filters" role="group" aria-label="種類で絞る">${FILTERS.map(([k, l]) => `<button class="kind ${state.kindFilter === k ? 'is-active' : ''}" data-k="${k}" aria-pressed="${state.kindFilter === k}">${l}</button>`).join('')}</div>
-    <div class="card narrow">
-      <div class="row"><label for="f-tag">タグ</label><select id="f-tag"><option value="">すべて</option>${tagList.map(t => `<option value="${esc(t.id)}" ${t.id === state.tagFilter ? 'selected' : ''}>#${esc(t.title)}</option>`).join('')}</select></div>
-      <div class="row"><label for="f-proj">プロジェクト</label><select id="f-proj"><option value="">すべて</option>${projList.map(p => `<option value="${esc(p.id)}" ${p.id === state.projectFilter ? 'selected' : ''}>${esc(p.title)}${p.status === 'closed' ? '(閉じた)' : ''}</option>`).join('')}</select></div>
-      <div class="row"><label for="f-sort">並び</label><select id="f-sort">${Object.entries(SORTS).map(([k, l]) => `<option value="${k}" ${k === state.sort ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div class="selects" role="group" aria-label="タグ・プロジェクトで絞る、並べ替え">
+      <select id="f-tag" class="pill-select${state.tagFilter ? ' is-set' : ''}" aria-label="タグで絞る"><option value=""># タグ</option>${tagList.map(t => `<option value="${esc(t.id)}" ${t.id === state.tagFilter ? 'selected' : ''}>#${esc(t.title)}</option>`).join('')}</select>
+      <select id="f-proj" class="pill-select${state.projectFilter ? ' is-set' : ''}" aria-label="プロジェクトで絞る"><option value="">◇ プロジェクト</option>${projList.map(p => `<option value="${esc(p.id)}" ${p.id === state.projectFilter ? 'selected' : ''}>${esc(p.title)}${p.status === 'closed' ? '(閉じた)' : ''}</option>`).join('')}</select>
+      <select id="f-sort" class="pill-select" aria-label="並び">${Object.entries(SORTS).map(([k, l]) => `<option value="${k}" ${k === state.sort ? 'selected' : ''}>↕ ${l}</option>`).join('')}</select>
     </div>
     <div class="list-tools"><span class="small muted" id="count"></span><button class="btn btn--small btn--plain" id="f-clear" hidden>条件を外す</button></div>
     <div id="results"></div>`;
   const draw = () => {
     const names = tagNames();
-    const links = linkIndex(state.cards);
-    const inProj = state.projectFilter ? links.get(state.projectFilter) || new Set() : null;
+    const inProj = state.projectFilter ? links().get(state.projectFilter) || new Set() : null;
     const list = sortCards(items()
       .filter(c => !state.kindFilter || (state.kindFilter === 'action' ? c.action : c.kind === state.kindFilter))
       .filter(c => !state.tagFilter || (c.tags || []).includes(state.tagFilter))
@@ -296,7 +377,7 @@ async function renderAll() {
     document.getElementById('count').textContent = any ? `${list.length}件` : '';
     document.getElementById('f-clear').hidden = !any;
     document.getElementById('results').innerHTML = list.length
-      ? `<ul class="list list--inset items">${list.slice(0, state.shown).map(c => cardRow(c, { names, filterable: true, links })).join('')}</ul>
+      ? `<ul class="list list--inset items">${list.slice(0, state.shown).map(c => cardRow(c, { names, filterable: true })).join('')}</ul>
          ${list.length > state.shown ? `<div class="actions"><button class="btn btn--plain" id="more">もっと見る</button></div>` : ''}`
       : `<div class="empty"><p class="empty__message">${items().length ? '見つかりませんでした' : 'まだ何もありません。受信箱から放り込んでください。'}</p></div>`;
     const more = document.getElementById('more');
@@ -316,16 +397,45 @@ async function renderAll() {
 }
 
 // ---------- タグ ----------
-async function renderTags() {
+// タグの名前を変える。同じ名前のタグがほかにあれば変えずに false
+async function renameTag(tag, value) {
+  const v = String(value).normalize('NFKC').replace(/^#+/, '').trim();
+  if (!v) return false;
+  const dup = tags().find(t => t.id !== tag.id && normTag(t.title) === normTag(v));
+  if (dup) { toast(`#${dup.title} がすでにあります`); return false; }
+  tag.title = v;
+  await save(tag);
+  return true;
+}
+
+async function deleteTag(tag) {
+  const n = tagUse().get(tag.id) || 0;
+  if (!confirm(`#${tag.title} を削除します。${n ? `付いている${n}枚のカードからも外れます(カード自体は残ります)。` : ''}`)) return false;
+  await removeCard(tag);
+  return true;
+}
+
+async function renderTags({ editing = false } = {}) {
   setTab('tags');
   setTitle('タグ');
   const use = tagUse();
   const list = tags().sort((a, b) => (use.get(b.id) || 0) - (use.get(a.id) || 0) || a.title.localeCompare(b.title, 'ja'));
   $view.innerHTML = `
     <div class="card"><div class="row"><input id="new-tag" placeholder="新しいタグ(例: ブログ、買いたい)" aria-label="新しいタグ"><button class="btn btn--small btn--tinted" id="add-tag">追加</button></div></div>
-    ${list.length ? `<div class="tag-cloud">${list.map(t => `<a class="chip-tag chip-tag--lg" href="#tag/${esc(t.id)}">#${esc(t.title)} <small>${use.get(t.id) || 0}</small></a>`).join('')}</div>
-      <p class="pad small muted">出口(#ブログ、#買いたい など)も、話題も、状態(#試したい など)も、同じタグで扱います。1つのカードにいくつ付けても構いません。</p>`
-      : `<div class="empty"><p class="empty__message">まだタグがありません。カードにタグを付けると、ここに並びます。</p></div>`}`;
+    ${list.length ? `<div class="list-tools"><span class="small muted">${editing ? '名前を書き換えると、付いているカードすべてで変わります' : ''}</span><button class="btn btn--small btn--plain" id="tag-edit">${editing ? '完了' : '名前の変更・削除'}</button></div>` : ''}
+    ${!list.length ? `<div class="empty"><p class="empty__message">まだタグがありません。カードにタグを付けると、ここに並びます。</p></div>`
+      : editing ? `<div class="card">${list.map(t => `<div class="row" data-id="${esc(t.id)}"><label>#</label><input class="row-left tag-name" value="${esc(t.title)}" aria-label="#${esc(t.title)} の名前"><small class="muted">${use.get(t.id) || 0}</small><button class="btn btn--small btn--plain danger tag-del" aria-label="#${esc(t.title)} を削除">削除</button></div>`).join('')}</div>`
+      : `<div class="tag-cloud">${list.map(t => `<a class="chip-tag chip-tag--lg" href="#tag/${esc(t.id)}">#${esc(t.title)} <small>${use.get(t.id) || 0}</small></a>`).join('')}</div>
+      <p class="pad small muted">出口(#ブログ、#買いたい など)も、話題も、状態(#試したい など)も、同じタグで扱います。1つのカードにいくつ付けても構いません。</p>`}`;
+  const editBtn = document.getElementById('tag-edit');
+  if (editBtn) editBtn.addEventListener('click', () => renderTags({ editing: !editing }));
+  $view.querySelectorAll('.tag-name').forEach(inp => inp.addEventListener('change', async () => {
+    const tag = byId(inp.closest('.row').dataset.id);
+    if (await renameTag(tag, inp.value)) toast(`#${tag.title} に変えました`); else inp.value = tag.title;
+  }));
+  $view.querySelectorAll('.tag-del').forEach(b => b.addEventListener('click', async () => {
+    if (await deleteTag(byId(b.closest('.row').dataset.id))) renderTags({ editing: true });
+  }));
   const input = document.getElementById('new-tag');
   const add = async () => {
     if (!input.value.trim()) return;
@@ -360,12 +470,7 @@ async function renderTag(id) {
     </div>`;
   const nameInput = document.getElementById('tag-name');
   nameInput.addEventListener('change', async () => {
-    const v = nameInput.value.normalize('NFKC').replace(/^#+/, '').trim();
-    if (!v) { nameInput.value = tag.title; return; }
-    const dup = tags().find(t => t.id !== id && normTag(t.title) === normTag(v));
-    if (dup) { toast(`#${dup.title} がすでにあります`); nameInput.value = tag.title; return; }
-    tag.title = v;
-    await save(tag);
+    if (!(await renameTag(tag, nameInput.value))) { nameInput.value = tag.title; return; }
     setTitle(`#${tag.title}`, { back: true });
   });
   autosave(tag, { body: document.getElementById('tag-body') });
@@ -378,9 +483,7 @@ async function renderTag(id) {
     location.hash = `#card/${card.id}`;
   });
   document.getElementById('del-tag').addEventListener('click', async () => {
-    if (!confirm(`#${tag.title} を削除します。カード自体は残り、このタグだけが外れます。`)) return;
-    await removeCard(tag);
-    location.hash = '#tags';
+    if (await deleteTag(tag)) location.hash = '#tags';
   });
 }
 
@@ -414,7 +517,6 @@ async function renderCard(id) {
   const names = tagNames();
   const refs = (card.refs || []).map(byId).filter(c => c && !c.deleted);
   const myProjects = linked(id, c => c.kind === 'project');
-  const otherProjects = projects().filter(p => p.status !== 'closed' && !myProjects.includes(p));
   const a = card.action;
   $view.innerHTML = `
     ${image ? `<div class="photo"><img id="photo" alt="写真"></div>` : ''}
@@ -429,17 +531,16 @@ async function renderCard(id) {
 
     <section class="list-section"><h2 class="list-section__header">タグ</h2>
       <div class="card">
-        <div class="chips chips--edit" id="c-tags"></div>
-        <div class="row"><input id="c-tag-input" placeholder="タグを追加" list="tag-list" autocomplete="off" aria-label="タグを追加"><button class="btn btn--small btn--tinted" id="c-tag-add">追加</button></div>
-        <datalist id="tag-list">${tags().map(t => `<option value="${esc(t.title)}">`).join('')}</datalist>
+        ${pickerHtml('c-tags', 'タグを探す・新しく作る')}
       </div>
+      <p class="list-section__footer">押すと付き、もう一度押すと外れます。いくつでも選べます。</p>
     </section>
 
     <section class="list-section"><h2 class="list-section__header">プロジェクト</h2>
       <div class="card">
-        <div class="chips chips--edit">${myProjects.map(p => `<span class="chip-tag chip-tag--edit chip-project"><a href="#project/${esc(p.id)}">${esc(p.title)}</a><button data-unlink="${esc(p.id)}" aria-label="${esc(p.title)} とのつながりを外す">×</button></span>`).join('') || '<span class="muted small">どのプロジェクトにもつないでいません(それで構いません)</span>'}</div>
-        ${otherProjects.length ? `<div class="row"><select id="c-project" aria-label="プロジェクトにつなぐ"><option value="">プロジェクトにつなぐ…</option>${otherProjects.map(p => `<option value="${esc(p.id)}">${esc(p.title)}</option>`).join('')}</select></div>` : ''}
+        ${pickerHtml('c-projects', 'プロジェクトを探す・新しく作る')}
       </div>
+      <p class="list-section__footer" id="c-proj-open">${projectLinksText(myProjects, 'どのプロジェクトにもつながなくて構いません。')}</p>
     </section>
 
     <section class="list-section"><h2 class="list-section__header">アクション</h2>
@@ -496,42 +597,28 @@ async function renderCard(id) {
   fields.body.addEventListener('input', () => grow(fields.body));
   document.getElementById('c-kind').addEventListener('change', async e => { card.kind = e.target.value; await save(card); renderCard(id); });
 
-  // タグの編集
-  const drawTags = () => {
-    const n = tagNames();
-    document.getElementById('c-tags').innerHTML = (card.tags || []).filter(t => n.get(t)).map(t =>
-      `<span class="chip-tag chip-tag--edit"><a href="#tag/${esc(t)}">#${esc(n.get(t))}</a><button data-t="${esc(t)}" aria-label="#${esc(n.get(t))} を外す">×</button></span>`).join('') || '<span class="muted small">タグなし</span>';
-    document.querySelectorAll('#c-tags button').forEach(b => b.addEventListener('click', async () => {
-      card.tags = card.tags.filter(t => t !== b.dataset.t);
-      await save(card);
-      drawTags();
-    }));
-  };
-  const tagInput = document.getElementById('c-tag-input');
-  const addTag = async () => {
-    const list = splitTags(tagInput.value);
-    if (!list.length) return;
-    for (const name of list) {
-      const t = await ensureTag(name);
-      if (!card.tags.includes(t.id)) card.tags.push(t.id);
-    }
-    await save(card);
-    tagInput.value = '';
-    drawTags();
-  };
-  document.getElementById('c-tag-add').addEventListener('click', addTag);
-  tagInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addTag(); } });
-  drawTags();
+  // タグ(押して付ける・外す)
+  mountPicker('c-tags', {
+    options: tagOptions, selected: () => new Set(card.tags || []), prefix: '#',
+    onToggle: async (tid, on) => { card.tags = on ? [...new Set([...(card.tags || []), tid])] : (card.tags || []).filter(t => t !== tid); await save(card); },
+    onCreate: async name => { const t = await ensureTag(name); card.tags = [...new Set([...(card.tags || []), t.id])]; await save(card); },
+  });
 
-  // プロジェクトとのつながり
-  $view.querySelectorAll('[data-unlink]').forEach(b => b.addEventListener('click', async () => { await unlink(card, byId(b.dataset.unlink)); renderCard(id); }));
-  const pSel = document.getElementById('c-project');
-  if (pSel) pSel.addEventListener('change', async () => { if (!pSel.value) return; await link(card, byId(pSel.value)); toast('プロジェクトにつなぎました'); renderCard(id); });
+  // プロジェクトとのつながり(押してつなぐ・外す)。閉じたプロジェクトは、つながっているものだけ出す
+  mountPicker('c-projects', {
+    kind: 'project',
+    options: () => { const mine = new Set(linkedIds(state.cards, id)); return projects().filter(p => p.status !== 'closed' || mine.has(p.id)).map(p => ({ id: p.id, label: p.title })); },
+    selected: () => new Set(linked(id, c => c.kind === 'project').map(p => p.id)),
+    onToggle: async (pid, on) => { on ? await link(card, byId(pid)) : await unlink(card, byId(pid)); refreshOpen(); },
+    onCreate: async name => { const np = newProject({ id: db.uid(), title: name }); await save(np); await link(card, np); refreshOpen(); toast(`プロジェクト「${name}」を作ってつなぎました`); },
+  });
+  function refreshOpen() { document.getElementById('c-proj-open').innerHTML = projectLinksText(linked(id, c => c.kind === 'project'), 'どのプロジェクトにもつながなくて構いません。'); }
 
   // アクション
   if (a) {
     const set = async patch => { Object.assign(card.action, patch); await save(card); };
     document.getElementById('a-done').addEventListener('change', async e => {
+      if (e.target.checked) celebrate(e.target);
       await set({ done: e.target.checked, doneAt: e.target.checked ? new Date().toISOString() : null });
       renderCard(id);
     });
@@ -579,10 +666,11 @@ async function renderProjects() {
   const closed = all.filter(p => p.status === 'closed');
   const row = p => {
     const pr = stepProgress(projectSteps(state.cards, p.id));
+    const n = linkedInfoCount(state.cards, p.id, links());
     return `<li class="item"><a class="item__main" href="#project/${esc(p.id)}">
-      <span class="item__title">${esc(p.title || '(無題)')}</span>
+      <span class="item__title">${colorDot(p)}${esc(p.title || '(無題)')}</span>
       ${p.goal ? `<span class="item__snippet">${esc(p.goal)}</span>` : ''}
-      <span class="item__meta">${p.due ? `<span class="badge">${esc(p.due)}</span>` : ''}${pr.all ? `<span>手順 ${pr.done}/${pr.all}</span>` : ''}${p.status === 'closed' ? `<span>閉じた ${esc(fmtDate(p.closedAt))}</span>` : ''}</span>
+      <span class="item__meta">${p.due ? `<span class="badge">${esc(p.due)}</span>` : ''}${pr.all ? `<span>手順 ${pr.done}/${pr.all}</span>` : ''}${n ? `<span>カード ${n}</span>` : ''}${p.status === 'closed' ? `<span>閉じた ${esc(fmtDate(p.closedAt))}</span>` : ''}</span>
     </a></li>`;
   };
   $view.innerHTML = `
@@ -611,7 +699,6 @@ async function renderProject(id, { suggestions = null } = {}) {
   const relProjects = rel.filter(c => c.kind === 'project');
   const relInfo = rel.filter(isInfo);
   const names = tagNames();
-  const others = projects().filter(x => x.id !== id && x.status !== 'closed' && !relProjects.includes(x));
   const t = today();
   const closed = p.status === 'closed';
   const stepRow = (st, i) => {
@@ -633,6 +720,10 @@ async function renderProject(id, { suggestions = null } = {}) {
       <input class="field field--title" id="p-title" placeholder="プロジェクト名" value="${esc(p.title)}" aria-label="プロジェクト名">
       <textarea class="field field--desc" id="p-goal" placeholder="ゴール(どうなったら終わりか)" aria-label="ゴール">${esc(p.goal)}</textarea>
       <div class="row"><label for="p-due">期日(任意)</label><input id="p-due" type="date" value="${esc(p.due || '')}"></div>
+      <div class="row swatches" role="radiogroup" aria-label="色"><label>色</label><span class="swatches__list">
+        <button type="button" class="swatch swatch--none${p.color ? '' : ' is-on'}" data-color="" role="radio" aria-checked="${!p.color}" aria-label="色なし"></button>
+        ${PROJECT_COLORS.map(([k, l]) => `<button type="button" class="swatch${p.color === k ? ' is-on' : ''}" data-color="${k}" style="background:${colorVar(k)}" role="radio" aria-checked="${p.color === k}" aria-label="${l}"></button>`).join('')}
+      </span></div>
       <textarea class="field field--desc" id="p-body" placeholder="メモ(任意)" aria-label="メモ">${esc(p.body)}</textarea>
     </div>
 
@@ -650,13 +741,12 @@ async function renderProject(id, { suggestions = null } = {}) {
 
     <section class="list-section"><h2 class="list-section__header">つながっているプロジェクト</h2>
       <div class="card">
-        <div class="chips chips--edit">${relProjects.map(x => `<span class="chip-tag chip-tag--edit chip-project"><a href="#project/${esc(x.id)}">${esc(x.title)}</a><button data-unlink="${esc(x.id)}" aria-label="${esc(x.title)} とのつながりを外す">×</button></span>`).join('') || '<span class="muted small">なし</span>'}</div>
-        ${others.length ? `<div class="row"><select id="p-link" aria-label="プロジェクトをつなぐ"><option value="">プロジェクトをつなぐ…</option>${others.map(x => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join('')}</select></div>` : ''}
+        ${pickerHtml('p-links', 'プロジェクトを探す・新しく作る')}
       </div>
-      <p class="list-section__footer">親子ではなく、横のつながりです。どちらから見ても表示されます。</p>
+      <p class="list-section__footer">親子ではなく、横のつながりです。押すとつながり、どちらから見ても表示されます。<br><span id="p-links-open">${projectLinksText(relProjects)}</span></p>
     </section>
 
-    <section class="list-section"><h2 class="list-section__header">つないだ情報</h2>
+    <section class="list-section"><h2 class="list-section__header">つないだ情報${relInfo.length ? ` <span class="count">${relInfo.length}</span>` : ''}</h2>
       ${relInfo.length ? `<ul class="list list--inset items">${relInfo.map(c => cardRow(c, { names })).join('')}</ul>` : ''}
       <div class="card${relInfo.length ? ' card--after-list' : ''}"><div class="row"><input id="new-info" class="row-left" placeholder="メモ・URLをここに書いてつなぐ" aria-label="情報を追加"><button class="btn btn--small btn--tinted" id="add-info">追加</button></div></div>
       <p class="list-section__footer">受信箱やすべてのカードからも、カードを開いて「プロジェクトにつなぐ」でここに集まります。</p>
@@ -673,6 +763,11 @@ async function renderProject(id, { suggestions = null } = {}) {
   autosave(p, { title: document.getElementById('p-title'), goal: document.getElementById('p-goal'), body: document.getElementById('p-body'), closeNote: document.getElementById('p-close-note') },
     () => setTitle(p.title || 'プロジェクト', { back: true }));
   document.getElementById('p-due').addEventListener('change', async e => { p.due = e.target.value || null; await save(p); });
+  $view.querySelectorAll('.swatch').forEach(b => b.addEventListener('click', async () => {
+    p.color = b.dataset.color || null;
+    await save(p);
+    $view.querySelectorAll('.swatch').forEach(x => { const on = x === b; x.classList.toggle('is-on', on); x.setAttribute('aria-checked', on); });
+  }));
 
   // 手順
   const stepInput = document.getElementById('new-step');
@@ -686,6 +781,7 @@ async function renderProject(id, { suggestions = null } = {}) {
   stepInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) addStep(); });
   $view.querySelectorAll('#steps .item__check').forEach(cb => cb.addEventListener('change', async () => {
     const st = byId(cb.closest('.item').dataset.id);
+    if (cb.checked) celebrate(cb);
     Object.assign(st.action, { done: cb.checked, doneAt: cb.checked ? new Date().toISOString() : null });
     await save(st);
     renderProject(id);
@@ -725,9 +821,14 @@ async function renderProject(id, { suggestions = null } = {}) {
   if (sclose) sclose.addEventListener('click', () => renderProject(id));
 
   // つながり
-  $view.querySelectorAll('[data-unlink]').forEach(b => b.addEventListener('click', async () => { await unlink(p, byId(b.dataset.unlink)); renderProject(id); }));
-  const pl = document.getElementById('p-link');
-  if (pl) pl.addEventListener('change', async () => { if (!pl.value) return; await link(p, byId(pl.value)); renderProject(id); });
+  mountPicker('p-links', {
+    kind: 'project',
+    options: () => { const mine = new Set(linkedIds(state.cards, id)); return projects().filter(x => x.id !== id && (x.status !== 'closed' || mine.has(x.id))).map(x => ({ id: x.id, label: x.title })); },
+    selected: () => new Set(linked(id, c => c.kind === 'project').map(x => x.id)),
+    onToggle: async (pid, on) => { on ? await link(p, byId(pid)) : await unlink(p, byId(pid)); refreshOpen(); },
+    onCreate: async name => { const np = newProject({ id: db.uid(), title: name }); await save(np); await link(p, np); refreshOpen(); },
+  });
+  function refreshOpen() { document.getElementById('p-links-open').innerHTML = projectLinksText(linked(id, c => c.kind === 'project')); }
   const infoInput = document.getElementById('new-info');
   const addInfo = async () => {
     if (!infoInput.value.trim()) { infoInput.focus(); return; }
@@ -787,6 +888,7 @@ async function renderStep(st) {
 
   const set = async patch => { Object.assign(st, patch); await save(st); };
   document.getElementById('st-done').addEventListener('change', async e => {
+    if (e.target.checked) celebrate(e.target);
     await set({ action: { ...st.action, done: e.target.checked, doneAt: e.target.checked ? new Date().toISOString() : null } });
     renderStep(st);
   });
@@ -840,6 +942,7 @@ async function renderActions() {
     : `<div class="empty"><p class="empty__message">アクションはまだありません。カードを開いて追加するか、プロジェクトの手順に期限を付けると、ここに出ます。</p></div>`;
   $view.querySelectorAll('.item__check').forEach(cb => cb.addEventListener('change', async () => {
     const card = byId(cb.closest('.item').dataset.id);
+    if (cb.checked) celebrate(cb);
     card.action.done = cb.checked;
     card.action.doneAt = cb.checked ? new Date().toISOString() : null;
     await save(card);
@@ -928,6 +1031,7 @@ async function takeCapture() {
 async function route() {
   const [name, arg] = location.hash.replace(/^#/, '').split('/');
   window.scrollTo(0, 0);
+  linkCache = null;
   switch (name) {
     case 'all': return renderAll();
     case 'tags': return renderTags();
