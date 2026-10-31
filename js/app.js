@@ -257,7 +257,14 @@ function splitTags(s) {
 // ---------- すべて(探す) ----------
 const FILTERS = [['', 'すべて'], ['memo', 'メモ'], ['url', 'Web'], ['video', '動画'], ['quote', '名言'], ['photo', '写真'], ['summary', 'まとめ'], ['action', 'アクション']];
 
+// 「すべて」の条件はこの端末に覚えておく(同期はしない)。次に開いたときも同じ条件で並ぶ
+const FILTER_KEYS = ['query', 'kindFilter', 'tagFilter', 'projectFilter', 'sort'];
+function rememberFilters() {
+  db.setMeta('allFilters', Object.fromEntries(FILTER_KEYS.map(k => [k, state[k]]))).catch(() => {});
+}
+
 async function renderAll() {
+  rememberFilters();
   setTab('all');
   setTitle('すべて');
   const tagList = tags().sort((a, b) => a.title.localeCompare(b.title, 'ja'));
@@ -299,11 +306,11 @@ async function renderAll() {
     $view.querySelectorAll('#results [data-fproj]').forEach(b => b.addEventListener('click', () => { state.projectFilter = b.dataset.fproj; state.shown = 100; renderAll(); scrollTo(0, 0); }));
   };
   let t;
-  document.getElementById('q').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { state.query = e.target.value; state.shown = 100; draw(); }, 200); });
+  document.getElementById('q').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { state.query = e.target.value; state.shown = 100; rememberFilters(); draw(); }, 200); });
   $view.querySelectorAll('.filters .kind').forEach(b => b.addEventListener('click', () => { state.kindFilter = b.dataset.k; state.shown = 100; renderAll(); }));
   document.getElementById('f-tag').addEventListener('change', e => { state.tagFilter = e.target.value; state.shown = 100; renderAll(); });
   document.getElementById('f-proj').addEventListener('change', e => { state.projectFilter = e.target.value; state.shown = 100; renderAll(); });
-  document.getElementById('f-sort').addEventListener('change', e => { state.sort = e.target.value; draw(); });
+  document.getElementById('f-sort').addEventListener('change', e => { state.sort = e.target.value; rememberFilters(); draw(); });
   document.getElementById('f-clear').addEventListener('click', () => { Object.assign(state, { query: '', kindFilter: '', tagFilter: '', projectFilter: '', shown: 100 }); renderAll(); });
   draw();
 }
@@ -955,6 +962,8 @@ async function onRemoteChange() {
 
 (async function start() {
   await load();
+  const saved = await db.getMeta('allFilters', null).catch(() => null);
+  if (saved) for (const k of FILTER_KEYS) if (typeof saved[k] === 'string') state[k] = saved[k];
   db.requestPersist();
   // Safariのタブはホーム画面のアプリと保存場所が別で、使わないと7日で消える
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
