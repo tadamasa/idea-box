@@ -113,7 +113,8 @@ export function syncNow() {
         for (const name of NAMES) {
           for (const [id, d] of batch[name]) {
             const rec = d.deleted ? null : await db.get(name, id);
-            body[name].push(rec ? { id, mtime: rec.mtime || d.mtime, data: rec } : { id, mtime: d.mtime, deleted: true });
+            // deleted: true の印が付いたカードも墓標として送る(ハブの deleted 列と他端末の削除に効かせる)
+            body[name].push(rec && !rec.deleted ? { id, mtime: rec.mtime || d.mtime, data: rec } : { id, mtime: (rec && rec.mtime) || d.mtime, deleted: true });
           }
         }
         const res = await post(body);

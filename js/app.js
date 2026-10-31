@@ -321,12 +321,13 @@ async function renderTag(id) {
 }
 
 // ---------- カード ----------
+// 欄ごとに別のタイマーを持つ。500ms以内に別の欄へ移っても、前の欄の書きかけを落とさない
 function autosave(card, fields, after) {
-  let t;
+  const timers = {};
   for (const [key, el] of Object.entries(fields)) {
     el.addEventListener('input', () => {
-      clearTimeout(t);
-      t = setTimeout(async () => {
+      clearTimeout(timers[key]);
+      timers[key] = setTimeout(async () => {
         card[key] = el.value;
         if (key === 'url' || key === 'body') card.kind = card.kind === 'memo' || card.kind === 'url' || card.kind === 'video' ? newCard({ id: card.id, text: card.body, url: card.url }).kind : card.kind;
         await save(card);
@@ -632,9 +633,10 @@ async function onRemoteChange() {
   // Safariのタブはホーム画面のアプリと保存場所が別で、使わないと7日で消える
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   if (ios && !(matchMedia('(display-mode: standalone)').matches || navigator.standalone)) document.getElementById('tab-warning').hidden = false;
+  // 同期の見張りを先に付ける。先に受け取ると、URLから来たカードがハブへ送られない
+  await sync.initSync({ onRemoteChange });
   await takeCapture();
   route();
-  await sync.initSync({ onRemoteChange });
   sync.schedule(300);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync.schedule(300); });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
