@@ -239,3 +239,25 @@ test('ハブ: ショートカット・拡張からの capture でカードが1�
   assert.equal(v.data.kind, 'video');
   assert.equal(hub.post({ token: hub.token, capture: { text: ' ' } }).error, 'empty');
 });
+
+test('dotFill: 1色はそのまま、複数は円を等分、未知の色は無視', async () => {
+  const { dotFill } = await import('../js/core.js');
+  assert.equal(dotFill([]), '');
+  assert.equal(dotFill(['nope']), '');
+  assert.equal(dotFill(['red']), 'var(--sys-red)');
+  assert.equal(dotFill(['red', 'red']), 'var(--sys-red)');
+  assert.equal(dotFill(['red', 'blue']), 'conic-gradient(var(--sys-red) 0deg 180deg, var(--sys-blue) 180deg 360deg)');
+});
+
+test('linkedInfoCount: 情報カードだけを両方向で数える', async () => {
+  const { linkedInfoCount } = await import('../js/core.js');
+  const cards = [
+    { id: 'p', kind: 'project', links: ['a'] },
+    { id: 'a', kind: 'memo' },
+    { id: 'b', kind: 'url', links: ['p'] },
+    { id: 'c', kind: 'memo', links: ['p'], deleted: true },
+    { id: 's', kind: 'step', project: 'p', links: ['p'] },
+    { id: 'q', kind: 'project', links: ['p'] },
+  ];
+  assert.equal(linkedInfoCount(cards, 'p'), 2);
+});

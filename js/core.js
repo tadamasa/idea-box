@@ -84,10 +84,26 @@ export function tagId(name) {
 }
 
 // タグごとの色相(0〜359)。idから決まるので、どの端末でも同じ色になる
-export function hue(id) {
-  let h = 2166136261;
-  for (const ch of String(id || '')) h = Math.imul(h ^ ch.codePointAt(0), 16777619) >>> 0;
-  return h % 360;
+// プロジェクトの色。色はプロジェクトにだけ付け、所属するカードには小さな点で出す
+export const PROJECT_COLORS = [['red', '赤'], ['orange', '橙'], ['yellow', '黄'], ['green', '緑'], ['teal', '青緑'], ['blue', '青'], ['purple', '紫'], ['pink', '桃'], ['gray', '灰']];
+const COLOR_KEYS = new Set(PROJECT_COLORS.map(c => c[0]));
+export const colorVar = key => `var(--sys-${key})`;
+
+// 点の塗り。1色ならその色、複数なら円を等分して塗り分ける(1つの点で複数の所属を表す)
+export function dotFill(keys) {
+  const list = [...new Set(keys)].filter(k => COLOR_KEYS.has(k)).slice(0, 4);
+  if (!list.length) return '';
+  if (list.length === 1) return colorVar(list[0]);
+  const step = 360 / list.length;
+  return `conic-gradient(${list.map((k, i) => `${colorVar(k)} ${i * step}deg ${(i + 1) * step}deg`).join(', ')})`;
+}
+
+// プロジェクトにつながっている情報カードの数(手順・タグ・ほかのプロジェクトは数えない)
+export function linkedInfoCount(cards, projectId, idx = linkIndex(cards)) {
+  const byId = new Map(cards.map(c => [c.id, c]));
+  let n = 0;
+  for (const id of idx.get(projectId) || []) { const c = byId.get(id); if (c && !c.deleted && isInfo(c)) n++; }
+  return n;
 }
 
 export function displayTitle(card) {
