@@ -2,7 +2,8 @@
 import fs from 'fs';
 import vm from 'vm';
 
-export function loadHub() {
+// fetch: (url) => ({ code, body }) を渡すと UrlFetchApp.fetch の代わりに使う。渡さなければ外へは出ず、失敗扱いになる
+export function loadHub({ fetch } = {}) {
   const sheets = new Map();
   const props = {};
   const makeSheet = name => {
@@ -33,6 +34,13 @@ export function loadHub() {
     ContentService: { createTextOutput: s => ({ text: s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
     Utilities: { getUuid: () => '1234-5678-abcd' },
     Logger: { log() {} },
+    UrlFetchApp: {
+      fetch: (url, opts) => {
+        if (!fetch) throw new Error('network disabled');
+        const r = fetch(url, opts);
+        return { getResponseCode: () => r.code ?? 200, getContentText: () => r.body ?? '' };
+      },
+    },
   };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(new URL('../hub/Code.gs', import.meta.url), 'utf8'), ctx);

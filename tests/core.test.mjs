@@ -162,6 +162,41 @@ test('ハブ: 送ったカードが別の端末に届き、古い書き込みは
   assert.deepEqual(r4.cards.map(c => [c.id, c.deleted]), [['c1', true]]);
 });
 
+test('ハブ: タイトルのないURLは、ページの見出し・Xのポスト・YouTubeの題名を本文に入れる', () => {
+  const calls = [];
+  const hub = loadHub({ fetch: url => {
+    calls.push(url);
+    if (url.startsWith('https://publish.twitter.com/oembed')) return { body: JSON.stringify({ author_name: '山田', html: '<blockquote class="twitter-tweet"><p lang="ja" dir="ltr">朝の散歩で&quot;発見&quot;<br>がある <a href="https://t.co/x">#散歩</a></p>&mdash; 山田 (@yamada) <a href="#">2026</a></blockquote>' }) };
+    if (url.startsWith('https://www.youtube.com/oembed')) return { body: JSON.stringify({ title: '3Dプリンタ入門', author_name: 'ものづくりch' }) };
+    if (url === 'https://example.com/a') return { body: '<html><head><meta property="og:title" content="関係性のデザイン &amp; 実践"><title>x</title></head></html>' };
+    if (url === 'https://example.com/b') return { body: '<title>\n  ただのタイトル  </title>' };
+    return { code: 404 };
+  } });
+  const get = id => hub.post({ token: hub.token, since: 0, cards: [] }).cards.find(c => c.id === id).data;
+  // ショートカットは「URL + 改行 + 一言」を text で送る
+  const a = get(hub.post({ token: hub.token, capture: { text: 'https://example.com/a\nあとで読む' } }).id);
+  assert.equal(a.url, 'https://example.com/a');
+  assert.equal(a.body, '関係性のデザイン & 実践\n\nあとで読む');
+  assert.equal(get(hub.post({ token: hub.token, capture: { url: 'https://example.com/b' } }).id).body, 'ただのタイトル');
+  const x = get(hub.post({ token: hub.token, capture: { text: 'https://x.com/yamada/status/123?s=20' } }).id);
+  assert.equal(x.body, '朝の散歩で"発見"\nがある #散歩\n— 山田');
+  assert.ok(calls.some(u => u.includes(encodeURIComponent('https://twitter.com/yamada/status/123'))));
+  const yt = get(hub.post({ token: hub.token, capture: { url: 'https://youtu.be/abc' } }).id);
+  assert.equal(yt.body, '3Dプリンタ入門\n— ものづくりch');
+  // タイトルが来ていれば(Chrome拡張)取りに行かない。取れなくても受け取りは成功する
+  const n = calls.length;
+  hub.post({ token: hub.token, capture: { url: 'https://example.com/a', title: '拡張から' } });
+  assert.equal(calls.length, n);
+  assert.equal(get(hub.post({ token: hub.token, capture: { url: 'https://example.com/404' } }).id).body, '');
+});
+
+test('ハブ: 外に出られなくても受け取りは成功する', () => {
+  const hub = loadHub();
+  const r = hub.post({ token: hub.token, capture: { text: 'https://example.com/z メモ' } });
+  assert.equal(r.ok, true);
+  assert.equal(hub.post({ token: hub.token, since: 0, cards: [] }).cards[0].data.body, 'メモ');
+});
+
 test('ハブ: 合言葉が違えば断る', () => {
   const hub = loadHub();
   assert.equal(hub.post({ token: 'x', since: 0 }).error, 'unauthorized');
