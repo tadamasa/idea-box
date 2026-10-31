@@ -111,12 +111,65 @@ function captureCard_(cap, now) {
   if (!kind) kind = /(youtube\.com|youtu\.be|vimeo\.com|nicovideo\.jp)\//i.test(url) ? 'video' : url ? 'url' : /^[「『"“]/.test(text) ? 'quote' : 'memo';
   const tags = (Array.isArray(cap.tags) ? cap.tags : String(cap.tags || '').split(/[,、\s]+/)).map(t => String(t).replace(/^#+/, '').trim()).filter(Boolean);
   const iso = now.toISOString();
+  // 本文からURLそのものは外す(URL欄に入るため)。残った一言などはそのまま本文に
+  let body = url ? text.split(url).join('').trim() : text;
+  // タイトルが来ていないURLは、ページの見出しやポストの文を取ってきて本文の先頭に置く(取れなければ何もしない)
+  if (url && !title) {
+    const found = fetchSummary_(url);
+    if (found) body = [found, body].filter(Boolean).join('\n\n');
+  }
   return {
     id: now.getTime().toString(36) + Math.random().toString(36).slice(2, 8),
-    kind, title, body: url && text === url ? '' : text, url, quote,
+    kind, title, body, url, quote,
     tags: [], pendingTags: tags, inbox: true, action: null, createdAt: iso, updatedAt: iso,
     source: String(cap.source || ''),
   };
+}
+
+// URLから、本文に入れる短い説明を取ってくる。
+// X(旧Twitter)はページ本体が文字を返さないため、公式の oEmbed(publish.twitter.com)でポストの文と投稿者を取る。
+// YouTube も oEmbed で題名とチャンネル名を取る。ほかはページの og:title か <title>。
+function fetchSummary_(url) {
+  try {
+    if (/^https?:\/\/(www\.|mobile\.)?(x|twitter)\.com\/[^/]+\/status\/\d+/i.test(url)) {
+      const j = fetchJson_('https://publish.twitter.com/oembed?omit_script=1&dnt=true&url=' + encodeURIComponent(url.replace(/\/\/(www\.|mobile\.)?x\.com\//i, '//twitter.com/')));
+      if (j && j.html) {
+        const m = /<p[^>]*>([\s\S]*?)<\/p>/i.exec(j.html);
+        const tweet = m ? htmlText_(m[1]) : '';
+        if (tweet) return tweet + (j.author_name ? '\n— ' + j.author_name : '');
+      }
+      return '';
+    }
+    if (/^https?:\/\/((www|m)\.)?(youtube\.com|youtu\.be)\//i.test(url)) {
+      const j = fetchJson_('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(url));
+      return j && j.title ? j.title + (j.author_name ? '\n— ' + j.author_name : '') : '';
+    }
+    const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: { 'User-Agent': 'Mozilla/5.0 (idea-hub)' } });
+    if (res.getResponseCode() >= 400) return '';
+    const html = String(res.getContentText()).slice(0, 200000);
+    const og = /<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']*)["']/i.exec(html) || /<meta[^>]+content=["']([^"']*)["'][^>]*property=["']og:title["']/i.exec(html);
+    const t = og ? og[1] : ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [])[1] || '');
+    return htmlText_(t).slice(0, 200);
+  } catch (err) {
+    return '';
+  }
+}
+
+function fetchJson_(u) {
+  const res = UrlFetchApp.fetch(u, { muteHttpExceptions: true });
+  if (res.getResponseCode() >= 400) return null;
+  return parse_(res.getContentText());
+}
+
+// タグを外し、よく出る文字参照を戻す。<br> は改行に
+function htmlText_(s) {
+  return String(s || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+    .replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function cardRow_(item, rev, tagNames) {
