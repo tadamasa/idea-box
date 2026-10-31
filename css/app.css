@@ -105,3 +105,12 @@ svg.ic { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-wid
 .row select#c-project, .row select#p-link { text-align: left; color: var(--color-accent); }
 .nav__action svg.ic { width: 24px; height: 24px; }
 .item--action .item__check { align-self: center; }
+
+/* すべて: 絞り込みと、押せるタグ */
+.card.narrow .row select { color: var(--color-accent); }
+.list-tools { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 var(--space-4) var(--space-1); }
+.item__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.item__main--top { padding-bottom: 0; }
+.item__meta--below { padding: 2px var(--space-4) var(--space-3); margin-top: 0; }
+button.chip-tag { border: none; font: inherit; font-size: 13px; line-height: 18px; min-height: 28px; cursor: pointer; }
+button.chip-tag:active { opacity: 0.6; }

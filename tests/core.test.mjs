@@ -1,7 +1,7 @@
 // npm test で実行。画面に触れない処理と、アイデアハブ(Code.gs)の動きを確かめる。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps } from '../js/core.js';
+import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps, sortCards, linkIndex } from '../js/core.js';
 import { splitOcr } from '../js/gemini.js';
 import { loadHub } from './gas-mock.mjs';
 
@@ -134,6 +134,28 @@ test('新しいプロジェクトは進行中で、手順案は重なりを除�
   assert.deepEqual(parseSteps('["予算を決める","試乗する","予算を決める"]', ['試乗する']), ['予算を決める']);
   assert.deepEqual(parseSteps('```json\n{"steps":[{"text":"下取りを査定する"}]}\n```'), ['下取りを査定する']);
   assert.deepEqual(parseSteps('1. 書類をそろえる\n・転出届を出す'), ['書類をそろえる', '転出届を出す']);
+});
+
+test('一覧の並べ替え: 新しい順・古い順・最近さわった順・期日の近い順', () => {
+  const cards = [
+    { id: 'a', createdAt: '1', updatedAt: '9', action: null },
+    { id: 'b', createdAt: '2', updatedAt: '2', action: { due: '2026-11-10', done: false } },
+    { id: 'c', createdAt: '3', updatedAt: '3', action: { due: '2026-11-02', done: false } },
+    { id: 'd', createdAt: '4', updatedAt: '4', action: { due: null, done: false } },
+    { id: 'e', createdAt: '5', updatedAt: '5', action: { due: '2026-11-01', done: true } },
+  ];
+  const ids = s => sortCards(cards, s).map(c => c.id).join('');
+  assert.equal(ids('created'), 'edcba');
+  assert.equal(ids('oldest'), 'abcde');
+  assert.equal(ids('updated'), 'aedcb');
+  assert.equal(ids('due'), 'cbdea'); // 期日あり(近い順)→期日なし→完了・アクションなし(新しい順)
+  assert.equal(cards[0].id, 'a'); // 元の配列は並べ替えない
+});
+
+test('つながりの索引は両方向で、消したカードを除く', () => {
+  const idx = linkIndex([{ id: 'm', links: ['p'] }, { id: 'n', links: ['p'], deleted: true }, { id: 'p', links: [] }]);
+  assert.deepEqual([...idx.get('p')], ['m']);
+  assert.deepEqual([...idx.get('m')], ['p']);
 });
 
 test('写真の読み取り結果を見出しと本文に分ける', () => {

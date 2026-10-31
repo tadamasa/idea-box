@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
+import { KINDS, SORTS, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -9,6 +9,9 @@ const state = {
   cards: [],
   query: '',
   kindFilter: '',
+  tagFilter: '',
+  projectFilter: '',
+  sort: 'created',
   shown: 100,
 };
 
@@ -168,14 +171,27 @@ function tagChips(card, names = tagNames()) {
   return `<span class="chips">${(card.tags || []).filter(t => names.get(t)).map(t => `<span class="chip-tag">#${esc(names.get(t))}</span>`).join('')}</span>`;
 }
 
-function cardRow(card, { names = tagNames(), inboxButton = false } = {}) {
+// filterable: タグとプロジェクトを押せるボタンにする(「すべて」の一覧)。リンクの中にボタンを入れないよう、行の下側を <a> の外に出す
+function cardRow(card, { names = tagNames(), inboxButton = false, filterable = false, links = null } = {}) {
   const snippet = card.title ? (card.body || card.quote || '') : (card.body || '').split('\n').slice(1).join(' ');
   const action = card.action && !card.action.done ? `<span class="badge${isOverdue(card.action, today()) ? ' badge--warn' : ''}">アクション${card.action.due ? ` ${esc(card.action.due.slice(5).replace('-', '/'))}` : ''}</span>` : '';
+  const head = `<span class="item__kind kind-${esc(card.kind)}">${esc(KINDS[card.kind] || 'メモ')}</span>
+      <span class="item__title">${esc(displayTitle(card))}</span>
+      ${snippet.trim() ? `<span class="item__snippet">${esc(snippet.trim().slice(0, 140))}</span>` : ''}`;
+  if (filterable) {
+    const projs = [...((links && links.get(card.id)) || [])].map(byId).filter(p => p && !p.deleted && p.kind === 'project');
+    const tagBtns = (card.tags || []).filter(t => names.get(t)).map(t => `<button class="chip-tag" data-ftag="${esc(t)}" aria-label="#${esc(names.get(t))} で絞る">#${esc(names.get(t))}</button>`).join('');
+    const projBtns = projs.map(p => `<button class="chip-tag chip-project" data-fproj="${esc(p.id)}" aria-label="${esc(p.title)} で絞る">${esc(p.title)}</button>`).join('');
+    return `<li class="item" data-id="${esc(card.id)}">
+    <div class="item__body">
+      <a class="item__main item__main--top" href="#card/${esc(card.id)}">${head}</a>
+      <div class="item__meta item__meta--below">${esc(fmtDate(card.createdAt))}${action}${tagBtns || projBtns ? `<span class="chips">${projBtns}${tagBtns}</span>` : ''}</div>
+    </div>
+  </li>`;
+  }
   return `<li class="item" data-id="${esc(card.id)}">
     <a class="item__main" href="#card/${esc(card.id)}">
-      <span class="item__kind kind-${esc(card.kind)}">${esc(KINDS[card.kind] || 'メモ')}</span>
-      <span class="item__title">${esc(displayTitle(card))}</span>
-      ${snippet.trim() ? `<span class="item__snippet">${esc(snippet.trim().slice(0, 140))}</span>` : ''}
+      ${head}
       <span class="item__meta">${esc(fmtDate(card.createdAt))}${action}${tagChips(card, names)}</span>
     </a>
     ${inboxButton ? `<button class="item__done" data-act="sorted" aria-label="受信箱から出す">✓</button>` : ''}
@@ -244,26 +260,50 @@ const FILTERS = [['', 'すべて'], ['memo', 'メモ'], ['url', 'Web'], ['video'
 async function renderAll() {
   setTab('all');
   setTitle('すべて');
+  const tagList = tags().sort((a, b) => a.title.localeCompare(b.title, 'ja'));
+  const projList = projects().sort((a, b) => (a.status === 'closed') - (b.status === 'closed') || a.title.localeCompare(b.title, 'ja'));
+  // 消されたタグやプロジェクトで絞ったままにならないように
+  if (state.tagFilter && !tagList.some(t => t.id === state.tagFilter)) state.tagFilter = '';
+  if (state.projectFilter && !projList.some(p => p.id === state.projectFilter)) state.projectFilter = '';
+  const any = state.kindFilter || state.tagFilter || state.projectFilter || state.query;
   $view.innerHTML = `
     <div class="pad"><input class="search-field" id="q" type="search" placeholder="検索(語・#タグ)" value="${esc(state.query)}" aria-label="検索"></div>
     <div class="filters" role="group" aria-label="種類で絞る">${FILTERS.map(([k, l]) => `<button class="kind ${state.kindFilter === k ? 'is-active' : ''}" data-k="${k}" aria-pressed="${state.kindFilter === k}">${l}</button>`).join('')}</div>
+    <div class="card narrow">
+      <div class="row"><label for="f-tag">タグ</label><select id="f-tag"><option value="">すべて</option>${tagList.map(t => `<option value="${esc(t.id)}" ${t.id === state.tagFilter ? 'selected' : ''}>#${esc(t.title)}</option>`).join('')}</select></div>
+      <div class="row"><label for="f-proj">プロジェクト</label><select id="f-proj"><option value="">すべて</option>${projList.map(p => `<option value="${esc(p.id)}" ${p.id === state.projectFilter ? 'selected' : ''}>${esc(p.title)}${p.status === 'closed' ? '(閉じた)' : ''}</option>`).join('')}</select></div>
+      <div class="row"><label for="f-sort">並び</label><select id="f-sort">${Object.entries(SORTS).map(([k, l]) => `<option value="${k}" ${k === state.sort ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    </div>
+    <div class="list-tools"><span class="small muted" id="count"></span>${any ? '<button class="btn btn--small btn--plain" id="f-clear">条件を外す</button>' : ''}</div>
     <div id="results"></div>`;
   const draw = () => {
     const names = tagNames();
-    const list = items()
+    const links = linkIndex(state.cards);
+    const inProj = state.projectFilter ? links.get(state.projectFilter) || new Set() : null;
+    const list = sortCards(items()
       .filter(c => !state.kindFilter || (state.kindFilter === 'action' ? c.action : c.kind === state.kindFilter))
-      .filter(c => matches(c, state.query, names))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .filter(c => !state.tagFilter || (c.tags || []).includes(state.tagFilter))
+      .filter(c => !inProj || inProj.has(c.id))
+      .filter(c => matches(c, state.query, names)), state.sort);
+    document.getElementById('count').textContent = any ? `${list.length}件` : '';
     document.getElementById('results').innerHTML = list.length
-      ? `<ul class="list list--inset items">${list.slice(0, state.shown).map(c => cardRow(c, { names })).join('')}</ul>
+      ? `<ul class="list list--inset items">${list.slice(0, state.shown).map(c => cardRow(c, { names, filterable: true, links })).join('')}</ul>
          ${list.length > state.shown ? `<div class="actions"><button class="btn btn--plain" id="more">もっと見る</button></div>` : ''}`
       : `<div class="empty"><p class="empty__message">${items().length ? '見つかりませんでした' : 'まだ何もありません。受信箱から放り込んでください。'}</p></div>`;
     const more = document.getElementById('more');
     if (more) more.addEventListener('click', () => { state.shown += 100; draw(); });
+    // 行のタグ・プロジェクトを押すと、それで絞る
+    $view.querySelectorAll('#results [data-ftag]').forEach(b => b.addEventListener('click', () => { state.tagFilter = b.dataset.ftag; state.shown = 100; renderAll(); scrollTo(0, 0); }));
+    $view.querySelectorAll('#results [data-fproj]').forEach(b => b.addEventListener('click', () => { state.projectFilter = b.dataset.fproj; state.shown = 100; renderAll(); scrollTo(0, 0); }));
   };
   let t;
   document.getElementById('q').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { state.query = e.target.value; state.shown = 100; draw(); }, 200); });
-  $view.querySelectorAll('.filters .kind').forEach(b => b.addEventListener('click', () => { state.kindFilter = b.dataset.k; renderAll(); }));
+  $view.querySelectorAll('.filters .kind').forEach(b => b.addEventListener('click', () => { state.kindFilter = b.dataset.k; state.shown = 100; renderAll(); }));
+  document.getElementById('f-tag').addEventListener('change', e => { state.tagFilter = e.target.value; state.shown = 100; renderAll(); });
+  document.getElementById('f-proj').addEventListener('change', e => { state.projectFilter = e.target.value; state.shown = 100; renderAll(); });
+  document.getElementById('f-sort').addEventListener('change', e => { state.sort = e.target.value; draw(); });
+  const clear = document.getElementById('f-clear');
+  if (clear) clear.addEventListener('click', () => { Object.assign(state, { query: '', kindFilter: '', tagFilter: '', projectFilter: '', shown: 100 }); renderAll(); });
   draw();
 }
 
