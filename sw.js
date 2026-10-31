@@ -1,6 +1,6 @@
 // アプリ本体をキャッシュして、電波がなくても開けるようにする。
 // Gemini や同期など外部APIはキャッシュしない。
-const VERSION = 'v4';
+const VERSION = 'v5';
 const PREFIX = 'idea-box-';
 const CACHE = `${PREFIX}${VERSION}`;
 const SHELL = [

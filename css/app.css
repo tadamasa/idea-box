@@ -125,3 +125,97 @@ button.chip-pick.chip-project.is-on { background-color: var(--sys-indigo, var(--
 button.chip-new { background: none; color: var(--color-accent); border: 1px dashed currentColor; }
 .row .tag-name { text-align: left; }
 .list-tools .btn { flex: none; white-space: nowrap; }
+
+/* ===== 楽しさと密度(ui-joy) ===== */
+/* 種類ごとの色。行の左端の細い帯と、種類名の小さな丸に使う */
+.item { --kc: var(--color-label-tertiary); }
+.item[data-kind="memo"] { --kc: var(--sys-yellow); }
+.item[data-kind="url"] { --kc: var(--sys-blue); }
+.item[data-kind="video"] { --kc: var(--sys-red, var(--sys-pink)); }
+.item[data-kind="quote"] { --kc: var(--sys-purple); }
+.item[data-kind="photo"] { --kc: var(--sys-green); }
+.item[data-kind="summary"] { --kc: var(--sys-orange); }
+.item[data-kind="project"] { --kc: var(--sys-indigo); }
+.item[data-kind="step"] { --kc: var(--sys-teal); }
+.items .item[data-kind]::before { content: ""; position: absolute; left: 5px; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background-color: var(--kc); }
+.item__kind { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; letter-spacing: 0.2px; }
+.item[data-kind] .item__kind::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background-color: var(--kc); }
+.kind-video { color: var(--sys-red, var(--sys-pink)); }
+.kind-memo { color: color-mix(in srgb, var(--sys-yellow) 55%, var(--color-label)); }
+
+/* 余白を詰めて、一画面に入る行を増やす */
+.item__main { padding: 9px var(--space-4) 9px 14px; gap: 1px; }
+.item__title { font-size: 16px; line-height: 21px; }
+.item__snippet { font-size: 14px; line-height: 19px; -webkit-line-clamp: 1; }
+.item__meta { margin-top: 1px; }
+.item__meta--below { padding: 2px var(--space-4) 9px 14px; }
+.items .item:not(:last-child)::after { left: 14px; }
+.item__done { width: 40px; height: 40px; margin: 6px 6px 0 0; }
+button.chip-tag { min-height: 24px; padding: 1px 8px; font-size: 12px; line-height: 16px; }
+.chip-tag { font-size: 12px; line-height: 16px; padding: 1px 7px; }
+.nav__title-large { font-size: 30px; line-height: 36px; padding-bottom: var(--space-1); }
+.list-section { margin: var(--space-4) 0; }
+.card { padding: var(--space-2) var(--space-3); }
+.card + .card { margin-top: var(--space-2); }
+.actions { padding: var(--space-3) var(--space-4); }
+.list-tools { min-height: 32px; }
+
+/* タグは名前から決まる色相で塗る。同じタグはどの画面でも同じ色 */
+.tinted { background-color: hsl(var(--h) 85% 50% / 0.14); color: hsl(var(--h) 70% 34%); }
+button.chip-pick.tinted:not(.is-on) { background-color: hsl(var(--h) 85% 50% / 0.12); color: hsl(var(--h) 60% 30%); }
+button.chip-pick.tinted.is-on { background-color: hsl(var(--h) 65% 45%); color: #fff; }
+@media (prefers-color-scheme: dark) {
+  .tinted { background-color: hsl(var(--h) 80% 60% / 0.2); color: hsl(var(--h) 85% 75%); }
+  button.chip-pick.tinted:not(.is-on) { background-color: hsl(var(--h) 80% 60% / 0.16); color: hsl(var(--h) 80% 78%); }
+  button.chip-pick.tinted.is-on { background-color: hsl(var(--h) 55% 45%); }
+}
+
+/* 押したときの小さな手応え */
+.btn, .chip-tag, .item__done, .item__check { transition: transform 120ms var(--ease-ios, ease); }
+.btn:active, button.chip-tag:active, .item__done:active { transform: scale(0.94); }
+.item__check:checked { animation: pop 260ms var(--ease-ios, ease); }
+@keyframes pop { 40% { transform: scale(1.35); } }
+
+/* 完了の粒 */
+.spark { position: fixed; z-index: 1000; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 2px; pointer-events: none; animation: spark 650ms cubic-bezier(.2,.7,.3,1) forwards; }
+.spark:nth-child(odd) { border-radius: 50%; }
+@keyframes spark {
+  0% { transform: translate(0, 0) scale(1) rotate(0); opacity: 1; }
+  100% { transform: translate(var(--dx), calc(var(--dy) + 14px)) scale(0.3) rotate(200deg); opacity: 0; }
+}
+
+/* 放り込んだ行がふわっと現れ、整理した行はすっと消える */
+.item.is-new { animation: arrive 900ms var(--ease-ios, ease); }
+@keyframes arrive {
+  0% { transform: translateY(-10px); opacity: 0; background-color: color-mix(in srgb, var(--color-accent) 18%, transparent); }
+  35% { transform: none; opacity: 1; }
+  100% { background-color: transparent; }
+}
+.item.is-leaving { animation: leave 220ms ease-in forwards; }
+@keyframes leave { to { transform: translateX(40px); opacity: 0; } }
+
+/* 空っぽの画面も少しだけ楽しく */
+.empty__message::before { content: "✦"; display: block; font-size: 28px; line-height: 1; margin-bottom: var(--space-2); background: linear-gradient(135deg, var(--sys-orange), var(--sys-pink), var(--sys-purple)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .item.is-new, .item.is-leaving, .item__check:checked { animation: none; }
+  .btn:active, button.chip-tag:active, .item__done:active { transform: none; }
+}
+
+/* PCの広い画面では、一覧を2列のカードにして一度に見渡せるようにする */
+@media (min-width: 1100px) {
+  .content, .nav__bar, .nav__title-large, .tab-warning { max-width: 1080px; }
+  .list--inset.items:not(#steps) { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); background: none; border-radius: 0; overflow: visible; }
+  .list--inset.items:not(#steps) > .item { background-color: var(--bg-grouped-secondary); border-radius: var(--r-list); overflow: hidden; }
+  .list--inset.items:not(#steps) > .item::after { display: none; }
+}
+
+/* すべて: 絞り込みは横一列の小さな選択にまとめ、一覧を上に上げる */
+.filters { padding: var(--space-2) var(--space-4) var(--space-1); }
+.kind { min-height: 32px; font-size: 14px; }
+.selects { display: flex; gap: var(--space-2); overflow-x: auto; padding: var(--space-1) var(--space-4) var(--space-2); scrollbar-width: none; }
+.selects::-webkit-scrollbar { display: none; }
+.pill-select { flex: none; max-width: 46vw; min-height: 32px; border: none; border-radius: var(--r-capsule); padding: 0 26px 0 12px; font-size: 16px; color: var(--color-label); background: var(--bg-fill-tertiary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238E8E93' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 10px center; -webkit-appearance: none; appearance: none; text-overflow: ellipsis; }
+.pill-select.is-set { background-color: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent); font-weight: 600; }
+.search-field { min-height: 36px; }
+.list-tools:has(#count:empty):has(#f-clear[hidden]) { min-height: 0; padding: 0; }

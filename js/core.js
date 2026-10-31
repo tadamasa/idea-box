@@ -83,6 +83,13 @@ export function tagId(name) {
   return `t-${h1.toString(36)}${h2.toString(36)}`;
 }
 
+// タグごとの色相(0〜359)。idから決まるので、どの端末でも同じ色になる
+export function hue(id) {
+  let h = 2166136261;
+  for (const ch of String(id || '')) h = Math.imul(h ^ ch.codePointAt(0), 16777619) >>> 0;
+  return h % 360;
+}
+
 export function displayTitle(card) {
   if (!card) return '';
   if (card.title) return card.title;
