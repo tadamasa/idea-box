@@ -12,8 +12,73 @@ export const KINDS = {
   step: '手順',
 };
 
+// 情報カードではない、仕組みのためのカード(kinddef は種別の定義)
+export const STRUCT_KINDS = ['tag', 'project', 'step', 'kinddef'];
 // 受信箱・すべて・近いカードに並べる「情報」のカードか(タグ・プロジェクト・手順は別の画面で扱う)
-export const isInfo = c => !c.deleted && c.kind !== 'tag' && c.kind !== 'project' && c.kind !== 'step';
+export const isInfo = c => !c.deleted && !STRUCT_KINDS.includes(c.kind);
+
+// ---------- 種別(情報ソースの種類) ----------
+// 最初からある種別。fields はカードを作るときに出す欄: url=リンク、quote=引用、photo=写真
+// 種別アイコン(線画・1色)。名前 → [呼び名, SVGのpath]。色は付けず文字色に合わせる
+export const KIND_ICONS = {
+  pencil: ['メモ', 'M4 20h4L19 9l-4-4L4 16z M13.5 6.5l4 4'],
+  link: ['リンク', 'M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1 M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1'],
+  play: ['動画', 'M3 6.5A2.5 2.5 0 0 1 5.5 4h13A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z M10 9l5 3-5 3z'],
+  quote: ['引用', 'M4 12h5v6H4v-5c0-3 1.5-5 4-6.5 M14 12h5v6h-5v-5c0-3 1.5-5 4-6.5'],
+  camera: ['写真', 'M4 8h3l2-3h6l2 3h3v11H4z M15.5 13a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z'],
+  layers: ['まとめ', 'M12 4l8 4.5-8 4.5-8-4.5z M4 12.5l8 4.5 8-4.5 M4 16.5l8 4.5 8-4.5'],
+  book: ['本', 'M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3'],
+  paper: ['論文・文書', 'M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6'],
+  mic: ['音声', 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z M5 11a7 7 0 0 0 14 0 M12 18v3'],
+  music: ['音楽', 'M9 18V5l11-2v13 M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z M20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'],
+  chat: ['会話', 'M4 5h16v11H9l-5 4z'],
+  person: ['人', 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0'],
+  bulb: ['ひらめき', 'M9 18h6 M10 21h4 M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z'],
+  bag: ['買い物', 'M5 8h14l-1 13H6z M9 8V6a3 3 0 0 1 6 0v2'],
+  pin: ['場所', 'M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z M14 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0z'],
+  calendar: ['予定', 'M4 6h16v15H4z M4 10h16 M8 3v4 M16 3v4'],
+  globe: ['世界', 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z M3 12h18 M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z'],
+  flask: ['実験・研究', 'M9 3h6 M10 3v6l-5 10a1.5 1.5 0 0 0 1.3 2h11.4a1.5 1.5 0 0 0 1.3-2l-5-10V3'],
+  heart: ['好き', 'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z'],
+  star: ['大事', 'M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z'],
+  dot: ['点', 'M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'],
+};
+export const DEFAULT_KIND_ICON = 'dot';
+const iconName = n => (Object.hasOwn(KIND_ICONS, n) ? n : '');
+// アイコンのSVG。中身は上の固定の表からだけ作るので、そのまま innerHTML に入れてよい
+export const kindIconSvg = (name, size = 14) => `<svg class="ki" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false"><path d="${KIND_ICONS[iconName(name) || DEFAULT_KIND_ICON][1]}"/></svg>`;
+
+export const BASE_KINDS = [
+  { key: 'memo', title: 'メモ', fields: [], icon: 'pencil' },
+  { key: 'url', title: 'Web', fields: ['url'], icon: 'link' },
+  { key: 'video', title: '動画', fields: ['url'], icon: 'play' },
+  { key: 'quote', title: '名言・引用', fields: ['quote'], icon: 'quote' },
+  { key: 'photo', title: '写真', fields: ['photo'], icon: 'camera' },
+  { key: 'summary', title: 'まとめ', fields: [], icon: 'layers' },
+];
+export const KIND_FIELDS = { url: 'リンク(URL)', quote: '引用' };
+const BASE_KEYS = new Set(BASE_KINDS.map(k => k.key));
+export const isBaseKind = key => BASE_KEYS.has(key);
+export const kindDefId = key => `kind-${key}`;
+// 種別の一覧。最初からある種別に、定義カード(kind: 'kinddef')での名前・順番・隠す・追加を重ねる。
+// 最初からある種別は消せず、名前と順番と隠すだけ変えられる(メモは隠せない)。欄は追加した種別だけ変えられる
+export function kindList(defCards = []) {
+  const defs = new Map(defCards.filter(d => d && d.kind === 'kinddef' && d.key).map(d => [d.key, d]));
+  const out = BASE_KINDS.map((b, i) => {
+    const d = defs.get(b.key);
+    return { key: b.key, title: (d && d.title) || b.title, fields: b.fields, order: d && Number.isFinite(d.order) ? d.order : i * 10, hidden: !!(d && d.hidden && !d.deleted && b.key !== 'memo'), icon: (d && !d.deleted && iconName(d.icon)) || b.icon, base: true };
+  });
+  for (const d of defs.values()) {
+    if (isBaseKind(d.key) || d.deleted) continue;
+    out.push({ key: d.key, title: d.title || '(無題)', fields: (d.fields || []).filter(f => KIND_FIELDS[f]), order: Number.isFinite(d.order) ? d.order : 1000, hidden: !!d.hidden, icon: iconName(d.icon) || DEFAULT_KIND_ICON, base: false });
+  }
+  return out.sort((a, b) => a.order - b.order || a.title.localeCompare(b.title, 'ja'));
+}
+export function newKindDef({ key, title, fields = [], order = 1000, icon = '', now = new Date().toISOString() }) {
+  return { id: kindDefId(key), kind: 'kinddef', key, title: String(title || '').trim(), fields, order, icon: iconName(icon), hidden: false, body: '', url: '', quote: '', tags: [], inbox: false, action: null, createdAt: now, updatedAt: now };
+}
+// 種別のキーとして使える文字列か(URLから来た値をそのまま使わないため)
+const KIND_KEY_RE = /^[a-z][\w-]{0,40}$/;
 
 const URL_RE = /https?:\/\/[^\s<>"'「」]+/i;
 const VIDEO_RE = /^(https?:\/\/)?((www|m)\.)?(youtube\.com|youtu\.be|vimeo\.com|nicovideo\.jp)\//i;
@@ -25,7 +90,7 @@ export function extractUrl(text) {
 
 // 入力内容から種類を推し量る。選ぶ手間を省くためのもので、あとで変えられる。
 export function detectKind({ text = '', url = '', kind = '' } = {}) {
-  if (kind && KINDS[kind] && !['tag', 'project', 'step'].includes(kind)) return kind;
+  if (kind && KIND_KEY_RE.test(kind) && !STRUCT_KINDS.includes(kind)) return kind;
   const u = url || extractUrl(text);
   if (u && VIDEO_RE.test(u)) return 'video';
   if (u) return 'url';
@@ -326,7 +391,7 @@ export function thumbOf(card) {
   return null;
 }
 // まだハブに問い合わせていないURLカードか(代表画像か見出しが欠けているもの)
-export const needsImage = c => !c.deleted && (c.kind === 'url' || c.kind === 'video') && /^https?:\/\//i.test(c.url || '') && !c.imageTried
+export const needsImage = c => isInfo(c) && c.kind !== 'photo' && /^https?:\/\//i.test(c.url || '') && !c.imageTried
   && ((!c.image && !youtubeId(c.url)) || !c.title);
 
 // ---------- つながりの紋章 ----------
