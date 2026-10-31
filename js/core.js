@@ -173,6 +173,33 @@ export function linkedIds(cards, id) {
   return [...out];
 }
 
+// つながりの索引: id → つながっている id の集合(両方向)。一覧で行ごとに linkedIds を呼ぶと遅いので、まとめて作る
+export function linkIndex(cards) {
+  const idx = new Map();
+  const add = (a, b) => { if (!idx.has(a)) idx.set(a, new Set()); idx.get(a).add(b); };
+  for (const c of cards) {
+    if (c.deleted) continue;
+    for (const l of c.links || []) if (l !== c.id) { add(c.id, l); add(l, c.id); }
+  }
+  return idx;
+}
+
+// 一覧の並べ替え
+//  created: 新しく入れた順 / oldest: 古い順 / updated: 最近さわった順
+//  due: 未完了のアクションの期日が近い順 → 期日なしのアクション → アクションなし(それぞれ新しい順)
+export const SORTS = { created: '新しい順', oldest: '古い順', updated: '最近さわった順', due: '期日の近い順' };
+export function sortCards(list, sort = 'created') {
+  const newest = (a, b) => (b.createdAt || '').localeCompare(a.createdAt || '');
+  const rank = c => !c.action || c.action.done ? 2 : c.action.due ? 0 : 1;
+  const cmp = {
+    created: newest,
+    oldest: (a, b) => -newest(a, b),
+    updated: (a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '') || newest(a, b),
+    due: (a, b) => rank(a) - rank(b) || (rank(a) === 0 ? a.action.due.localeCompare(b.action.due) : 0) || newest(a, b),
+  }[sort] || newest;
+  return [...list].sort(cmp);
+}
+
 // プロジェクトの手順を order の順に。手順はそれぞれカードで、project に属するプロジェクトのidを持つ
 export function projectSteps(cards, projectId) {
   return cards.filter(c => !c.deleted && c.kind === 'step' && c.project === projectId)
