@@ -375,7 +375,7 @@ async function renderCard(id) {
       <textarea class="field field--note" id="c-body" placeholder="本文" aria-label="本文">${esc(card.body)}</textarea>
       ${card.kind === 'quote' || card.quote ? `<textarea class="field field--quote" id="c-quote" placeholder="引用・名言" aria-label="引用">${esc(card.quote)}</textarea>` : ''}
       <div class="row"><label for="c-url">URL</label><input id="c-url" type="url" inputmode="url" placeholder="https://…" value="${esc(card.url)}">${card.url ? `<a class="btn btn--small btn--plain" href="${esc(card.url)}" target="_blank" rel="noopener">開く</a>` : ''}</div>
-      <div class="row"><label for="c-kind">種類</label><select id="c-kind">${Object.entries(KINDS).filter(([k]) => k !== 'tag').map(([k, l]) => `<option value="${k}" ${k === card.kind ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="row"><label for="c-kind">種類</label><select id="c-kind">${Object.entries(KINDS).filter(([k]) => !['tag', 'project', 'step'].includes(k)).map(([k, l]) => `<option value="${k}" ${k === card.kind ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
     ${image ? `<div class="actions"><button class="btn btn--tinted" id="ocr">文字を読み取る(Gemini)</button></div>` : ''}
 
