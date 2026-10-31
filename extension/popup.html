@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<main id="main">
+  <input id="title" placeholder="タイトル" aria-label="タイトル">
+  <input id="url" placeholder="URL" aria-label="URL">
+  <textarea id="quote" placeholder="選んだ文(引用)" aria-label="引用" rows="3"></textarea>
+  <textarea id="text" placeholder="一言メモ(任意)" aria-label="メモ" rows="3"></textarea>
+  <input id="tags" placeholder="#タグ(空白区切り、任意)" aria-label="タグ">
+  <button id="send" class="primary">受信箱に送る</button>
+  <p id="msg" role="status"></p>
+  <details id="setup">
+    <summary>設定</summary>
+    <label>アイデアハブのURL<input id="hubUrl" placeholder="https://script.google.com/…/exec"></label>
+    <label>合言葉<input id="token" autocomplete="off"></label>
+    <label>idea-box のURL<input id="appUrl"></label>
+    <button id="saveSettings">保存</button>
+    <p class="note">ハブを設定すると、タブを開かずにそのまま送ります。未設定のときは idea-box を新しいタブで開いて受信箱に入れます。</p>
+  </details>
+</main>
+<script type="module" src="popup.js"></script>
+</body>
+</html>

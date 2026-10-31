@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="idea-box">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<title>idea-box</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/hig-tokens.css">
+<link rel="stylesheet" href="css/hig-components.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="nav nav--large glass" id="nav">
+  <div class="nav__bar">
+    <button class="nav__back" id="back" hidden>‹ 戻る</button>
+    <h1 class="nav__title" id="nav-title">受信箱</h1>
+    <span></span>
+  </div>
+  <h2 class="nav__title-large" id="nav-title-large" aria-hidden="true">受信箱</h2>
+</header>
+
+<p class="tab-warning" id="tab-warning" role="note" hidden>Safariで開いています。ここで書いた内容はホーム画面のアプリとは別に保存され、7日間開かないと消えることがあります。ホーム画面のアイコンから開いてください。</p>
+
+<main class="content" id="view" aria-live="polite"></main>
+
+<nav class="tabbar" id="tabbar" aria-label="メイン">
+  <div class="tabbar__capsule glass">
+    <a class="tabbar__item" href="#inbox" data-tab="inbox">
+      <span class="tabbar__icon" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/></svg></span><span class="tabbar__label">受信箱</span>
+    </a>
+    <a class="tabbar__item" href="#all" data-tab="all">
+      <span class="tabbar__icon" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span><span class="tabbar__label">すべて</span>
+    </a>
+    <a class="tabbar__item" href="#tags" data-tab="tags">
+      <span class="tabbar__icon" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></svg></span><span class="tabbar__label">タグ</span>
+    </a>
+    <a class="tabbar__item" href="#actions" data-tab="actions">
+      <span class="tabbar__icon" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><span class="tabbar__label">アクション</span>
+    </a>
+    <a class="tabbar__item" href="#settings" data-tab="settings">
+      <span class="tabbar__icon" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span><span class="tabbar__label">設定</span>
+    </a>
+  </div>
+</nav>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
