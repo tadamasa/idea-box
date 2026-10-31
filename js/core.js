@@ -189,8 +189,9 @@ export function sortActionList(list, sort = 'due') {
   return { open, done };
 }
 
-// 期日での絞り込み。overdue: 期限切れ / today: 今日まで / week: 7日以内 / none: 期日なし
-export const DUE_WINDOWS = { overdue: '期限切れ', today: '今日まで', week: '7日以内', none: '期日なし' };
+// 期日での絞り込み。overdue: 期限切れ / today: 今日まで / week: 7日後まで / none: 期日なし
+// 「〜まで」は期限切れも含む(遅れているものこそ、その期間にやる必要があるため)
+export const DUE_WINDOWS = { overdue: '期限切れ', today: '今日まで', week: '7日後まで', none: '期日なし' };
 export function inDueWindow(action, win, today) {
   if (!win) return true;
   const due = action && action.due;
