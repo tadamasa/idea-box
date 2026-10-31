@@ -261,3 +261,25 @@ test('linkedInfoCount: 情報カードだけを両方向で数える', async () 
   ];
   assert.equal(linkedInfoCount(cards, 'p'), 2);
 });
+
+test('sortActionList と inDueWindow', async () => {
+  const { sortActionList, inDueWindow } = await import('../js/core.js');
+  const cards = [
+    { id: 'a', createdAt: '2026-01-01', action: { due: '2026-11-05' } },
+    { id: 'b', createdAt: '2026-03-01', action: { due: '2026-11-01' } },
+    { id: 'c', createdAt: '2026-02-01', action: {} },
+    { id: 'd', createdAt: '2026-02-01', action: { done: true, doneAt: '2026-10-01' } },
+  ];
+  assert.deepEqual(sortActionList(cards, 'due').open.map(c => c.id), ['b', 'a', 'c']);
+  assert.deepEqual(sortActionList(cards, 'created').open.map(c => c.id), ['b', 'c', 'a']);
+  assert.deepEqual(sortActionList(cards, 'oldest').done.map(c => c.id), ['d']);
+  const t = '2026-11-01';
+  assert.equal(inDueWindow({ due: '2026-10-31' }, 'overdue', t), true);
+  assert.equal(inDueWindow({ due: '2026-11-01' }, 'overdue', t), false);
+  assert.equal(inDueWindow({ due: '2026-11-01' }, 'today', t), true);
+  assert.equal(inDueWindow({ due: '2026-11-08' }, 'week', t), true);
+  assert.equal(inDueWindow({ due: '2026-11-09' }, 'week', t), false);
+  assert.equal(inDueWindow({}, 'none', t), true);
+  assert.equal(inDueWindow({}, 'week', t), false);
+  assert.equal(inDueWindow({}, '', t), true);
+});
