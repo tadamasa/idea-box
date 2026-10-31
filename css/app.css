@@ -233,3 +233,20 @@ button.chip-tag { min-height: 24px; padding: 1px 8px; font-size: 12px; line-heig
 .sigil-box { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-3) 0 0; }
 .sigil-box .sigil { color: var(--color-label); }
 .sigil-box p { margin: 0; }
+
+/* 受信箱: 種別を選んで作る */
+.kind-pick { display: flex; gap: var(--space-2); overflow-x: auto; padding: 0 var(--space-4) var(--space-2); scrollbar-width: none; }
+.kind-pick::-webkit-scrollbar { display: none; }
+.kind-pick .kind { min-height: 32px; font-size: 14px; display: inline-flex; align-items: center; text-decoration: none; }
+.kind--edit { background: none !important; color: var(--color-accent) !important; }
+.capture .field--title { border-bottom: var(--hairline) solid var(--color-separator); }
+.capture .row + .field--desc, .capture .field--quote + .field--desc { border-top: var(--hairline) solid var(--color-separator); }
+
+/* 種別の編集 */
+.row-link { display: flex; flex-direction: column; gap: 2px; color: inherit; text-decoration: none; width: 100%; padding: var(--space-1) 0; }
+.row-link .muted { font-size: 13px; }
+.kind-row__body { padding: 0 var(--space-2) var(--space-2) var(--space-4); }
+.kind-row .row input { font-weight: 600; }
+.kind-row__opts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.kind-hide { display: inline-flex; align-items: center; gap: 4px; color: var(--color-label-secondary); }
+.kind-hide input { width: 18px; height: 18px; accent-color: var(--color-accent); }

@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
+import { KINDS, BASE_KINDS, KIND_FIELDS, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -101,7 +101,7 @@ function tagUse() {
 
 async function load() {
   state.cards = await db.getAll('cards');
-  linkCache = slotCache = null;
+  linkCache = slotCache = kindCache = null;
 }
 
 // touch: false なら「最近さわった」時刻を変えない(画像の取得など、自分で直していない書き込み)
@@ -110,7 +110,7 @@ async function save(card, { touch = true } = {}) {
   await db.put('cards', card);
   const i = state.cards.findIndex(c => c.id === card.id);
   if (i >= 0) state.cards[i] = card; else state.cards.push(card);
-  linkCache = slotCache = null;
+  linkCache = slotCache = kindCache = null;
 }
 
 async function addCard(input) {
@@ -192,7 +192,12 @@ async function shrink(file, max = 1600) {
 
 // ---------- 共通の部品 ----------
 // つながりの索引は画面を描くたびに1回だけ作る(保存や画面切り替えで作り直す)
-let linkCache = null, slotCache = null;
+let linkCache = null, slotCache = null, kindCache = null;
+// 種別の一覧(最初からある種別 + 自分で変えた・足した分)
+const kinds = () => (kindCache ||= kindList(state.cards.filter(c => c.kind === 'kinddef')));
+const kindOf = key => kinds().find(k => k.key === key);
+const kindName = key => (kindOf(key) || {}).title || KINDS[key] || 'メモ';
+const hasField = (key, f) => ((kindOf(key) || {}).fields || []).includes(f);
 const links = () => (linkCache ||= linkIndex(state.cards));
 const slots = () => (slotCache ||= { t: tagSlots(state.cards.filter(c => c.kind === 'tag')), p: projectSlots(state.cards.filter(c => c.kind === 'project')) });
 // カードが属するプロジェクトの色を1つの点で。複数なら円を塗り分ける
@@ -266,7 +271,7 @@ function cardRow(card, { names = tagNames(), inboxButton = false, filterable = f
   const snippet = card.title ? (card.body || card.quote || '') : (card.body || '').split('\n').slice(1).join(' ');
   const action = card.action && !card.action.done ? `<span class="badge${isOverdue(card.action, today()) ? ' badge--warn' : ''}">アクション${card.action.due ? ` ${esc(shortDue(card.action.due))}` : ''}</span>` : '';
   const head = `<span class="item__head"><span class="item__text">
-      <span class="item__kind kind-${esc(card.kind)}">${esc(KINDS[card.kind] || 'メモ')}</span>
+      <span class="item__kind kind-${esc(card.kind)}">${esc(kindName(card.kind))}</span>
       <span class="item__title">${projectDot(card)}${esc(displayTitle(card))}</span>
       ${snippet.trim() ? `<span class="item__snippet">${esc(snippet.trim().slice(0, 140))}</span>` : ''}</span>${asideHtml(card)}</span>`;
   if (filterable) {
@@ -357,15 +362,27 @@ async function renderInbox() {
   setTitle('受信箱');
   const inbox = items().filter(c => c.inbox).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const names = tagNames();
+  const ck = state.capKind && kindOf(state.capKind) && !kindOf(state.capKind).hidden ? kindOf(state.capKind) : null;
+  if (!ck) state.capKind = '';
+  const f = k => !!ck && ck.fields.includes(k);
   $view.innerHTML = `
+    <div class="kind-pick" role="radiogroup" aria-label="種別">
+      <button class="kind ${ck ? '' : 'is-active'}" data-ck="" role="radio" aria-checked="${!ck}">おまかせ</button>
+      ${kinds().filter(k => !k.hidden && k.key !== 'summary').map(k => `<button class="kind ${ck && ck.key === k.key ? 'is-active' : ''}" data-ck="${esc(k.key)}" role="radio" aria-checked="${!!ck && ck.key === k.key}">${esc(k.title)}</button>`).join('')}
+      <a class="kind kind--edit" href="#kinds" aria-label="種別を編集">編集</a>
+    </div>
     <div class="card capture">
-      <textarea class="field field--note" id="cap-text" placeholder="思いつき・URL・名言…なんでも&#10;音声はキーボードのマイクで" aria-label="放り込む内容"></textarea>
+      ${ck ? `<input class="field field--title" id="cap-title" placeholder="タイトル${f('url') ? '(空ならページの題名)' : ''}" aria-label="タイトル">
+      ${f('url') ? `<div class="row"><label for="cap-url">URL</label><input id="cap-url" type="url" inputmode="url" class="row-left" placeholder="https://…"></div>` : ''}
+      ${f('quote') ? `<textarea class="field field--quote" id="cap-quote" placeholder="引用・名言" aria-label="引用"></textarea>` : ''}
+      <textarea class="field field--desc" id="cap-text" placeholder="${f('photo') ? '写真に添える一言(任意)' : 'メモ(任意)'}" aria-label="メモ"></textarea>`
+      : `<textarea class="field field--note" id="cap-text" placeholder="思いつき・URL・名言…なんでも&#10;音声はキーボードのマイクで" aria-label="放り込む内容"></textarea>`}
       <div class="field--tags">${pickerHtml('cap-tags', 'タグを選ぶ・新しく作る(任意)')}</div>
     </div>
     <div class="actions">
-      <label class="btn btn--tinted" for="cap-photo">写真</label>
+      <label class="btn ${f('photo') ? 'btn--prominent' : 'btn--tinted'}" for="cap-photo">写真</label>
       <input type="file" id="cap-photo" accept="image/*" hidden>
-      <button class="btn btn--prominent" id="cap-save">放り込む</button>
+      ${f('photo') ? '' : '<button class="btn btn--prominent" id="cap-save">放り込む</button>'}
     </div>
     ${inbox.length ? `<section class="list-section"><h2 class="list-section__header">まだ整理していないもの</h2>
       <ul class="list list--inset items">${inbox.map(c => cardRow(c, { names, inboxButton: true })).join('')}</ul>
@@ -381,9 +398,21 @@ async function renderInbox() {
     onCreate: async name => { capTags.add((await ensureTag(name)).id); },
   });
   const capNames = () => [...capTags].map(byId).filter(t => t && !t.deleted).map(t => t.title);
-  document.getElementById('cap-save').addEventListener('click', async () => {
-    if (!text.value.trim()) { text.focus(); return; }
-    const added = await addCard({ text: text.value, tags: capNames() });
+  $view.querySelectorAll('[data-ck]').forEach(b => b.addEventListener('click', () => { state.capKind = b.dataset.ck; renderInbox(); }));
+  const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const saveBtn = document.getElementById('cap-save');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    let input;
+    if (ck) {
+      const title = val('cap-title'), url = val('cap-url'), quote = val('cap-quote');
+      if (!title && !url && !quote && !text.value.trim()) { (document.getElementById('cap-title') || text).focus(); return; }
+      if (url && !/^https?:\/\//i.test(url)) { toast('URLは http(s):// から入れてください'); document.getElementById('cap-url').focus(); return; }
+      input = { text: text.value, title, url, quote, kind: ck.key, tags: capNames() };
+    } else {
+      if (!text.value.trim()) { text.focus(); return; }
+      input = { text: text.value, tags: capNames() };
+    }
+    const added = await addCard(input);
     toast('受信箱に入れました');
     await renderInbox();
     $view.querySelector(`.item[data-id="${added.id}"]`)?.classList.add('is-new');
@@ -391,7 +420,7 @@ async function renderInbox() {
   document.getElementById('cap-photo').addEventListener('change', async e => {
     const file = e.target.files[0];
     if (!file) return;
-    const card = await addCard({ text: text.value, kind: 'photo', tags: capNames() });
+    const card = await addCard({ text: text.value, title: val('cap-title'), kind: ck && ck.fields.includes('photo') ? ck.key : 'photo', tags: capNames() });
     await db.put('images', { id: card.id, blob: await shrink(file) });
     location.hash = `#card/${card.id}`;
   });
@@ -400,7 +429,8 @@ async function renderInbox() {
 
 
 // ---------- すべて(探す) ----------
-const FILTERS = [['', 'すべて'], ['memo', 'メモ'], ['url', 'Web'], ['video', '動画'], ['quote', '名言'], ['photo', '写真'], ['summary', 'まとめ'], ['action', 'アクション']];
+// 種類の絞り込み: すべて + 隠していない種別 + アクション
+const filters = () => [['', 'すべて'], ...kinds().filter(k => !k.hidden || k.key === state.kindFilter).map(k => [k.key, k.title]), ['action', 'アクション']];
 
 // 「すべて」の条件はこの端末に覚えておく(同期はしない)。次に開いたときも同じ条件で並ぶ
 const FILTER_KEYS = ['query', 'kindFilter', 'tagFilter', 'projectFilter', 'sort'];
@@ -419,7 +449,7 @@ async function renderAll() {
   if (state.projectFilter && !projList.some(p => p.id === state.projectFilter)) state.projectFilter = '';
   $view.innerHTML = `
     <div class="pad"><input class="search-field" id="q" type="search" placeholder="検索(語・#タグ)" value="${esc(state.query)}" aria-label="検索"></div>
-    <div class="filters" role="group" aria-label="種類で絞る">${FILTERS.map(([k, l]) => `<button class="kind ${state.kindFilter === k ? 'is-active' : ''}" data-k="${k}" aria-pressed="${state.kindFilter === k}">${l}</button>`).join('')}</div>
+    <div class="filters" role="group" aria-label="種類で絞る">${filters().map(([k, l]) => `<button class="kind ${state.kindFilter === k ? 'is-active' : ''}" data-k="${k}" aria-pressed="${state.kindFilter === k}">${l}</button>`).join('')}</div>
     <div class="selects" role="group" aria-label="タグ・プロジェクトで絞る、並べ替え">
       <select id="f-tag" class="pill-select${state.tagFilter ? ' is-set' : ''}" aria-label="タグで絞る"><option value=""># タグ</option>${tagList.map(t => `<option value="${esc(t.id)}" ${t.id === state.tagFilter ? 'selected' : ''}>#${esc(t.title)}</option>`).join('')}</select>
       <select id="f-proj" class="pill-select${state.projectFilter ? ' is-set' : ''}" aria-label="プロジェクトで絞る"><option value="">◇ プロジェクト</option>${projList.map(p => `<option value="${esc(p.id)}" ${p.id === state.projectFilter ? 'selected' : ''}>${esc(p.title)}${p.status === 'closed' ? '(閉じた)' : ''}</option>`).join('')}</select>
@@ -574,7 +604,7 @@ async function renderCard(id) {
   if (card.kind === 'project') { location.hash = `#project/${id}`; return; }
   if (card.kind === 'step') return renderStep(card);
   setTab(card.inbox ? 'inbox' : 'all');
-  setTitle(KINDS[card.kind] || 'カード', { back: true });
+  setTitle(kindName(card.kind) || 'カード', { back: true });
   const image = card.kind === 'photo' ? await db.get('images', id) : null;
   const near = nearCards(items(), card);
   const names = tagNames();
@@ -587,9 +617,9 @@ async function renderCard(id) {
     <div class="card">
       <input class="field field--title" id="c-title" placeholder="見出し(任意)" value="${esc(card.title)}" aria-label="見出し">
       <textarea class="field field--note" id="c-body" placeholder="本文" aria-label="本文">${esc(card.body)}</textarea>
-      ${card.kind === 'quote' || card.quote ? `<textarea class="field field--quote" id="c-quote" placeholder="引用・名言" aria-label="引用">${esc(card.quote)}</textarea>` : ''}
+      ${hasField(card.kind, 'quote') || card.quote ? `<textarea class="field field--quote" id="c-quote" placeholder="引用・名言" aria-label="引用">${esc(card.quote)}</textarea>` : ''}
       <div class="row"><label for="c-url">URL</label><input id="c-url" type="url" inputmode="url" placeholder="https://…" value="${esc(card.url)}">${card.url ? `<a class="btn btn--small btn--plain" href="${esc(card.url)}" target="_blank" rel="noopener">開く</a>` : ''}</div>
-      <div class="row"><label for="c-kind">種類</label><select id="c-kind">${Object.entries(KINDS).filter(([k]) => !['tag', 'project', 'step'].includes(k)).map(([k, l]) => `<option value="${k}" ${k === card.kind ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="row"><label for="c-kind">種類</label><select id="c-kind">${kinds().filter(k => !k.hidden || k.key === card.kind).map(k => `<option value="${esc(k.key)}" ${k.key === card.kind ? 'selected' : ''}>${esc(k.title)}</option>`).join('')}${kindOf(card.kind) ? '' : `<option value="${esc(card.kind)}" selected>${esc(kindName(card.kind))}</option>`}</select></div>
     </div>
     ${image ? `<div class="actions"><button class="btn btn--tinted" id="ocr">文字を読み取る(Gemini)</button></div>` : ''}
     <div class="sigil-box pad">${cardSigil(card, 44)}<p class="small muted">つながりの紋章: 外の点はタグ、弧はプロジェクト、内の線はつないだカード。つながりが似たカードは模様も似ます。</p></div>
@@ -1058,6 +1088,93 @@ async function renderActions() {
   }));
 }
 
+// ---------- 種別の編集 ----------
+// 定義カードを取り出す(なければ今の値で作る)。最初からある種別は名前・順番・隠すだけを持つ
+function kindDef(key) {
+  const d = byId(kindDefId(key));
+  if (d && !d.deleted) return d;
+  const k = kindOf(key) || { title: '', fields: [], order: 1000 };
+  return newKindDef({ key, title: k.title, fields: isBaseKind(key) ? [] : k.fields, order: k.order });
+}
+async function saveKind(key, patch) {
+  const d = Object.assign(kindDef(key), patch);
+  if (d.deleted) d.deleted = false;
+  await save(d);
+  kindCache = null;
+}
+
+async function renderKinds() {
+  setTab('settings');
+  setTitle('種別', { back: true });
+  const list = kinds();
+  const count = new Map();
+  for (const c of items()) count.set(c.kind, (count.get(c.kind) || 0) + 1);
+  const row = (k, i) => `<li class="item kind-row" data-key="${esc(k.key)}">
+    <div class="item__body kind-row__body">
+      <div class="row"><input class="row-left kind-name" value="${esc(k.title)}" aria-label="種別の名前"><span class="small muted">${count.get(k.key) || 0}枚</span></div>
+      <div class="kind-row__opts">
+        ${k.base ? `<span class="small muted">${k.fields.length ? `欄: ${k.fields.map(f => f === 'photo' ? '写真' : KIND_FIELDS[f]).join('・')}` : '欄: メモだけ'}</span>`
+          : Object.entries(KIND_FIELDS).map(([f, l]) => `<button type="button" class="chip-tag chip-pick${k.fields.includes(f) ? ' is-on' : ''}" data-field="${f}" aria-pressed="${k.fields.includes(f)}">${k.fields.includes(f) ? '✓ ' : ''}${l}</button>`).join('')}
+        ${k.key === 'memo' ? '' : `<label class="small kind-hide"><input type="checkbox" data-hide ${k.hidden ? 'checked' : ''}> 隠す</label>`}
+        ${k.base ? '' : '<button type="button" class="btn btn--small btn--plain danger" data-del>消す</button>'}
+      </div>
+    </div>
+    <span class="item__tools">
+      <button data-move="-1" ${i === 0 ? 'disabled' : ''} aria-label="上へ">↑</button>
+      <button data-move="1" ${i === list.length - 1 ? 'disabled' : ''} aria-label="下へ">↓</button>
+    </span>
+  </li>`;
+  $view.innerHTML = `
+    <p class="pad small muted">情報ソースの種類です。名前を変えたり、並べ替えたり、使わないものを隠したりできます。足した種別には、作るときに出す欄(リンク・引用)を選べます。</p>
+    <ul class="list list--inset items" id="kind-list">${list.map(row).join('')}</ul>
+    <div class="card card--after-list"><div class="row"><input id="new-kind" class="row-left" placeholder="新しい種別(例: 本、論文、ポッドキャスト)" aria-label="新しい種別"><button class="btn btn--small btn--tinted" id="add-kind">足す</button></div></div>
+    <p class="pad small muted">「隠す」と、受信箱の選択や絞り込みに出なくなります(その種別のカードはそのまま残ります)。足した種別を消すと、そのカードはメモになります。</p>`;
+  const keyOf = el => el.closest('.kind-row').dataset.key;
+  $view.querySelectorAll('.kind-name').forEach(inp => inp.addEventListener('change', async () => {
+    const v = inp.value.trim();
+    if (!v) { inp.value = kindName(keyOf(inp)); return; }
+    await saveKind(keyOf(inp), { title: v });
+    toast('名前を変えました');
+  }));
+  $view.querySelectorAll('[data-field]').forEach(b => b.addEventListener('click', async () => {
+    const key = keyOf(b), f = b.dataset.field, cur = new Set(kindOf(key).fields);
+    cur.has(f) ? cur.delete(f) : cur.add(f);
+    await saveKind(key, { fields: [...cur] });
+    renderKinds();
+  }));
+  $view.querySelectorAll('[data-hide]').forEach(cb => cb.addEventListener('change', async () => { await saveKind(keyOf(cb), { hidden: cb.checked }); }));
+  $view.querySelectorAll('[data-move]').forEach(b => b.addEventListener('click', async () => {
+    const keys = kinds().map(k => k.key), i = keys.indexOf(keyOf(b)), j = i + Number(b.dataset.move);
+    if (j < 0 || j >= keys.length) return;
+    [keys[i], keys[j]] = [keys[j], keys[i]];
+    for (let n = 0; n < keys.length; n++) if (kindOf(keys[n]).order !== n * 10) await saveKind(keys[n], { order: n * 10 });
+    renderKinds();
+  }));
+  $view.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+    const key = keyOf(b), n = count.get(key) || 0;
+    if (!confirm(`種別「${kindName(key)}」を消しますか?${n ? `\nこの種別の${n}枚のカードはメモになります。` : ''}`)) return;
+    for (const c of items().filter(c => c.kind === key)) { c.kind = 'memo'; await save(c); }
+    const d = byId(kindDefId(key));
+    if (d) await removeCard(d);
+    kindCache = null;
+    if (state.capKind === key) state.capKind = '';
+    if (state.kindFilter === key) state.kindFilter = '';
+    renderKinds();
+  }));
+  const input = document.getElementById('new-kind');
+  const add = async () => {
+    const title = input.value.trim();
+    if (!title) { input.focus(); return; }
+    if (kinds().some(k => k.title === title)) { toast('同じ名前の種別があります'); return; }
+    const key = 'k' + db.uid().toLowerCase().replace(/[^a-z0-9]/g, '');
+    await save(newKindDef({ key, title, fields: [], order: (kinds().at(-1)?.order ?? 0) + 10 }));
+    kindCache = null;
+    renderKinds();
+  };
+  document.getElementById('add-kind').addEventListener('click', add);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) add(); });
+}
+
 // ---------- 設定 ----------
 async function renderSettings() {
   setTab('settings');
@@ -1074,6 +1191,10 @@ async function renderSettings() {
       <div class="actions"><button class="btn btn--prominent" id="s-connect">${url ? '保存して同期する' : '接続して同期する'}</button>${url ? '<button class="btn btn--plain danger" id="s-disconnect">接続をやめる</button>' : ''}</div>
       <p class="list-section__footer" id="s-status"></p>
     </section>
+    <section class="list-section"><h2 class="list-section__header">種別</h2>
+      <ul class="list list--inset"><li class="list__row"><a class="row-link" href="#kinds">種別(情報ソースの種類)を編集 <span class="muted">${kinds().filter(k => !k.hidden).map(k => esc(k.title)).join('・')}</span></a></li></ul>
+    </section>
+
     <section class="list-section"><h2 class="list-section__header">Gemini(写真の文字読み取り)</h2>
       <div class="card">
         <div class="row"><label for="g-key">APIキー</label><input id="g-key" type="password" value="${esc(key)}" autocomplete="off"></div>
@@ -1138,7 +1259,7 @@ async function takeCapture() {
 async function route() {
   const [name, arg] = location.hash.replace(/^#/, '').split('/');
   window.scrollTo(0, 0);
-  linkCache = slotCache = null;
+  linkCache = slotCache = kindCache = null;
   switch (name) {
     case 'all': return renderAll();
     case 'tags': return renderTags();
@@ -1148,6 +1269,7 @@ async function route() {
     case 'projects': return renderProjects();
     case 'project': return renderProject(decodeURIComponent(arg || ''));
     case 'settings': return renderSettings();
+    case 'kinds': return renderKinds();
     default: return renderInbox();
   }
 }

@@ -12,8 +12,44 @@ export const KINDS = {
   step: '手順',
 };
 
+// 情報カードではない、仕組みのためのカード(kinddef は種別の定義)
+export const STRUCT_KINDS = ['tag', 'project', 'step', 'kinddef'];
 // 受信箱・すべて・近いカードに並べる「情報」のカードか(タグ・プロジェクト・手順は別の画面で扱う)
-export const isInfo = c => !c.deleted && c.kind !== 'tag' && c.kind !== 'project' && c.kind !== 'step';
+export const isInfo = c => !c.deleted && !STRUCT_KINDS.includes(c.kind);
+
+// ---------- 種別(情報ソースの種類) ----------
+// 最初からある種別。fields はカードを作るときに出す欄: url=リンク、quote=引用、photo=写真
+export const BASE_KINDS = [
+  { key: 'memo', title: 'メモ', fields: [] },
+  { key: 'url', title: 'Web', fields: ['url'] },
+  { key: 'video', title: '動画', fields: ['url'] },
+  { key: 'quote', title: '名言・引用', fields: ['quote'] },
+  { key: 'photo', title: '写真', fields: ['photo'] },
+  { key: 'summary', title: 'まとめ', fields: [] },
+];
+export const KIND_FIELDS = { url: 'リンク(URL)', quote: '引用' };
+const BASE_KEYS = new Set(BASE_KINDS.map(k => k.key));
+export const isBaseKind = key => BASE_KEYS.has(key);
+export const kindDefId = key => `kind-${key}`;
+// 種別の一覧。最初からある種別に、定義カード(kind: 'kinddef')での名前・順番・隠す・追加を重ねる。
+// 最初からある種別は消せず、名前と順番と隠すだけ変えられる(メモは隠せない)。欄は追加した種別だけ変えられる
+export function kindList(defCards = []) {
+  const defs = new Map(defCards.filter(d => d && d.kind === 'kinddef' && d.key).map(d => [d.key, d]));
+  const out = BASE_KINDS.map((b, i) => {
+    const d = defs.get(b.key);
+    return { key: b.key, title: (d && d.title) || b.title, fields: b.fields, order: d && Number.isFinite(d.order) ? d.order : i * 10, hidden: !!(d && d.hidden && !d.deleted && b.key !== 'memo'), base: true };
+  });
+  for (const d of defs.values()) {
+    if (isBaseKind(d.key) || d.deleted) continue;
+    out.push({ key: d.key, title: d.title || '(無題)', fields: (d.fields || []).filter(f => KIND_FIELDS[f]), order: Number.isFinite(d.order) ? d.order : 1000, hidden: !!d.hidden, base: false });
+  }
+  return out.sort((a, b) => a.order - b.order || a.title.localeCompare(b.title, 'ja'));
+}
+export function newKindDef({ key, title, fields = [], order = 1000, now = new Date().toISOString() }) {
+  return { id: kindDefId(key), kind: 'kinddef', key, title: String(title || '').trim(), fields, order, hidden: false, body: '', url: '', quote: '', tags: [], inbox: false, action: null, createdAt: now, updatedAt: now };
+}
+// 種別のキーとして使える文字列か(URLから来た値をそのまま使わないため)
+const KIND_KEY_RE = /^[a-z][\w-]{0,40}$/;
 
 const URL_RE = /https?:\/\/[^\s<>"'「」]+/i;
 const VIDEO_RE = /^(https?:\/\/)?((www|m)\.)?(youtube\.com|youtu\.be|vimeo\.com|nicovideo\.jp)\//i;
@@ -25,7 +61,7 @@ export function extractUrl(text) {
 
 // 入力内容から種類を推し量る。選ぶ手間を省くためのもので、あとで変えられる。
 export function detectKind({ text = '', url = '', kind = '' } = {}) {
-  if (kind && KINDS[kind] && !['tag', 'project', 'step'].includes(kind)) return kind;
+  if (kind && KIND_KEY_RE.test(kind) && !STRUCT_KINDS.includes(kind)) return kind;
   const u = url || extractUrl(text);
   if (u && VIDEO_RE.test(u)) return 'video';
   if (u) return 'url';
@@ -326,7 +362,7 @@ export function thumbOf(card) {
   return null;
 }
 // まだハブに問い合わせていないURLカードか(代表画像か見出しが欠けているもの)
-export const needsImage = c => !c.deleted && (c.kind === 'url' || c.kind === 'video') && /^https?:\/\//i.test(c.url || '') && !c.imageTried
+export const needsImage = c => isInfo(c) && c.kind !== 'photo' && /^https?:\/\//i.test(c.url || '') && !c.imageTried
   && ((!c.image && !youtubeId(c.url)) || !c.title);
 
 // ---------- つながりの紋章 ----------

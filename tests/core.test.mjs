@@ -333,3 +333,27 @@ test('tagSlots: タグ同士は重ならず、あとから増えても先のタ�
   assert.equal(new Set(b.values()).size, 20);
   for (const [id, s] of a) assert.equal(b.get(id), s);
 });
+
+test('kindList: 最初の種別に、名前の変更・隠す・追加を重ねる', async () => {
+  const { kindList, newKindDef, detectKind, isInfo } = await import('../js/core.js');
+  assert.deepEqual(kindList().map(k => k.key), ['memo', 'url', 'video', 'quote', 'photo', 'summary']);
+  const defs = [
+    { ...newKindDef({ key: 'url', title: 'ウェブ記事', order: 5 }), hidden: false },
+    { ...newKindDef({ key: 'memo', title: 'メモ' }), hidden: true },
+    { ...newKindDef({ key: 'summary', title: 'まとめ', order: 50 }), hidden: true },
+    newKindDef({ key: 'kbook', title: '本', fields: ['url', 'quote', 'bogus'], order: 1 }),
+    { ...newKindDef({ key: 'kgone', title: '消した' }), deleted: true },
+  ];
+  const list = kindList(defs);
+  assert.deepEqual(list.map(k => k.key), ['kbook', 'url', 'video', 'quote', 'photo', 'summary', 'memo']);
+  assert.equal(list[0].key, 'kbook');
+  assert.deepEqual(list[0].fields, ['url', 'quote']);
+  assert.equal(list.find(k => k.key === 'url').title, 'ウェブ記事');
+  assert.equal(list.find(k => k.key === 'memo').hidden, false); // メモは隠せない
+  assert.equal(list.find(k => k.key === 'summary').hidden, true);
+  assert.ok(!list.some(k => k.key === 'kgone'));
+  assert.equal(detectKind({ text: 'x', kind: 'kbook' }), 'kbook');
+  assert.equal(detectKind({ text: 'x', kind: '<script>' }), 'memo');
+  assert.equal(detectKind({ text: 'x', kind: 'tag' }), 'memo');
+  assert.equal(isInfo({ kind: 'kinddef' }), false);
+});
