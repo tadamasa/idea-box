@@ -1171,17 +1171,19 @@ async function fillImages() {
   const [url, token] = await Promise.all([db.getMeta('syncUrl', ''), db.getMeta('syncToken', '')]);
   if (!url || !token || !navigator.onLine) return;
   fillingImages = true;
-  let found = 0;
+  let found = 0, stopped = false;
   try {
     for (const c of state.cards.filter(needsImage).slice(0, 30)) {
+      const asked = c.url;
       let data;
       try {
-        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token, meta: c.url }), redirect: 'follow' });
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token, meta: asked }), redirect: 'follow' });
         data = await res.json();
-      } catch { break; }
-      if (!data || !data.ok || typeof data.image !== 'string') break;
+      } catch { stopped = true; break; }
+      if (!data || !data.ok || typeof data.image !== 'string') { stopped = true; break; }
       const card = byId(c.id);
-      if (!card || card.imageTried) continue;
+      // 待っている間にURLが変わっていたら、前のページの答えは使わない
+      if (!card || card.imageTried || card.url !== asked) continue;
       card.imageTried = true;
       if (!card.image && /^https:\/\//i.test(data.image)) { card.image = data.image; found++; }
       // 見出しのないカードには、ページの題名(YouTubeは動画の題名)を見出しに
@@ -1193,6 +1195,8 @@ async function fillImages() {
     fillingImages = false;
   }
   if (found) await refreshView();
+  // 30件を超えて残っていれば、少し置いて次の30件へ(ハブに断られたときは続けない)
+  if (!stopped && state.cards.some(needsImage)) setTimeout(fillImages, 3000);
 }
 async function refreshView() {
   const a = document.activeElement;
