@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
+import { KINDS, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -101,15 +101,16 @@ function tagUse() {
 
 async function load() {
   state.cards = await db.getAll('cards');
-  linkCache = null;
+  linkCache = slotCache = null;
 }
 
-async function save(card) {
-  card.updatedAt = new Date().toISOString();
+// touch: false なら「最近さわった」時刻を変えない(画像の取得など、自分で直していない書き込み)
+async function save(card, { touch = true } = {}) {
+  if (touch) card.updatedAt = new Date().toISOString();
   await db.put('cards', card);
   const i = state.cards.findIndex(c => c.id === card.id);
   if (i >= 0) state.cards[i] = card; else state.cards.push(card);
-  linkCache = null;
+  linkCache = slotCache = null;
 }
 
 async function addCard(input) {
@@ -117,6 +118,7 @@ async function addCard(input) {
   for (const name of input.tags || []) tagIds.push((await ensureTag(name)).id);
   const card = newCard({ ...input, id: db.uid(), tags: tagIds });
   await save(card);
+  if (needsImage(card)) setTimeout(fillImages, 500);
   return card;
 }
 
@@ -190,8 +192,9 @@ async function shrink(file, max = 1600) {
 
 // ---------- 共通の部品 ----------
 // つながりの索引は画面を描くたびに1回だけ作る(保存や画面切り替えで作り直す)
-let linkCache = null;
+let linkCache = null, slotCache = null;
 const links = () => (linkCache ||= linkIndex(state.cards));
+const slots = () => (slotCache ||= { t: tagSlots(state.cards.filter(c => c.kind === 'tag')), p: projectSlots(state.cards.filter(c => c.kind === 'project')) });
 // カードが属するプロジェクトの色を1つの点で。複数なら円を塗り分ける
 // カードが属するプロジェクト: つないだプロジェクトと、手順なら持ち主のプロジェクト
 function projectsOf(card, idx = links()) {
@@ -206,6 +209,51 @@ function projectDot(card, idx = links()) {
 }
 const colorDot = p => p && p.color ? `<span class="pdot pdot--sm" style="background:${colorVar(p.color)}" aria-hidden="true"></span>` : '';
 
+// つながりの紋章: タグ・プロジェクト・つないだカードから作る小さな模様
+function cardSigil(card, size = 22) {
+  const ids = [...(links().get(card.id) || [])].map(byId).filter(c => c && !c.deleted);
+  const sg = sigil(card, { slots: slots().t, pslots: slots().p, projectIds: projectsOf(card).map(p => p.id), linkIds: ids.filter(c => c.kind !== 'project' && c.kind !== 'tag').map(c => c.id) });
+  return sigilSvg(sg, size);
+}
+// カードの小さな絵。写真は端末の保存から後で差し込む(hydrateThumbs)
+function thumbHtml(card) {
+  const t = thumbOf(card);
+  if (!t) return '';
+  return t.photo ? `<span class="thumb" data-photo="${esc(card.id)}"></span>`
+    : `<span class="thumb"><img src="${esc(t.src)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>`;
+}
+// 行の右側: 絵があれば絵に紋章を小さく重ね、なければ紋章だけを大きめに
+function asideHtml(card) {
+  const th = thumbHtml(card);
+  return th ? `<span class="item__aside">${th}<span class="sigil-badge">${cardSigil(card, 22)}</span></span>`
+    : `<span class="item__aside item__aside--sigil">${cardSigil(card, 34)}</span>`;
+}
+const photoUrls = new Map();
+async function hydrateThumbs(root = $view) {
+  for (const el of root.querySelectorAll('.thumb[data-photo]:not(.is-ready)')) {
+    el.classList.add('is-ready');
+    const id = el.dataset.photo;
+    if (!photoUrls.has(id)) {
+      const rec = await db.get('images', id).catch(() => null);
+      photoUrls.set(id, rec && rec.blob ? URL.createObjectURL(rec.blob) : '');
+    }
+    const u = photoUrls.get(id);
+    if (u) el.innerHTML = `<img src="${u}" alt="">`; else dropThumb(el);
+  }
+}
+// 読めなかった絵は外し、行の右側は紋章だけの形に戻す
+function dropThumb(th) {
+  const aside = th.parentElement;
+  th.remove();
+  if (!aside || !aside.classList.contains('item__aside')) return;
+  const svg = aside.querySelector('.sigil');
+  aside.classList.add('item__aside--sigil');
+  aside.innerHTML = '';
+  if (svg) { svg.setAttribute('width', 34); svg.setAttribute('height', 34); aside.append(svg); }
+}
+document.addEventListener('error', e => { const t = e.target; if (t && t.tagName === 'IMG' && t.parentElement && t.parentElement.classList.contains('thumb')) dropThumb(t.parentElement); }, true);
+new MutationObserver(() => hydrateThumbs()).observe($view, { childList: true, subtree: true });
+
 function tagChips(card, names = tagNames()) {
   const list = (card.tags || []).map(t => names.get(t)).filter(Boolean);
   if (!list.length) return '';
@@ -217,9 +265,10 @@ function tagChips(card, names = tagNames()) {
 function cardRow(card, { names = tagNames(), inboxButton = false, filterable = false } = {}) {
   const snippet = card.title ? (card.body || card.quote || '') : (card.body || '').split('\n').slice(1).join(' ');
   const action = card.action && !card.action.done ? `<span class="badge${isOverdue(card.action, today()) ? ' badge--warn' : ''}">アクション${card.action.due ? ` ${esc(shortDue(card.action.due))}` : ''}</span>` : '';
-  const head = `<span class="item__kind kind-${esc(card.kind)}">${esc(KINDS[card.kind] || 'メモ')}</span>
+  const head = `<span class="item__head"><span class="item__text">
+      <span class="item__kind kind-${esc(card.kind)}">${esc(KINDS[card.kind] || 'メモ')}</span>
       <span class="item__title">${projectDot(card)}${esc(displayTitle(card))}</span>
-      ${snippet.trim() ? `<span class="item__snippet">${esc(snippet.trim().slice(0, 140))}</span>` : ''}`;
+      ${snippet.trim() ? `<span class="item__snippet">${esc(snippet.trim().slice(0, 140))}</span>` : ''}</span>${asideHtml(card)}</span>`;
   if (filterable) {
     const projs = [...(links().get(card.id) || [])].map(byId).filter(p => p && !p.deleted && p.kind === 'project');
     const tagBtns = (card.tags || []).filter(t => names.get(t)).map(t => `<button class="chip-tag" data-ftag="${esc(t)}" aria-label="#${esc(names.get(t))} で絞る">#${esc(names.get(t))}</button>`).join('');
@@ -534,6 +583,7 @@ async function renderCard(id) {
   const a = card.action;
   $view.innerHTML = `
     ${image ? `<div class="photo"><img id="photo" alt="写真"></div>` : ''}
+    ${!image && thumbOf(card) && thumbOf(card).src ? `<div class="photo photo--web thumb-hero"><span class="thumb"><img src="${esc(thumbOf(card).src)}" alt="" referrerpolicy="no-referrer"></span></div>` : ''}
     <div class="card">
       <input class="field field--title" id="c-title" placeholder="見出し(任意)" value="${esc(card.title)}" aria-label="見出し">
       <textarea class="field field--note" id="c-body" placeholder="本文" aria-label="本文">${esc(card.body)}</textarea>
@@ -542,6 +592,7 @@ async function renderCard(id) {
       <div class="row"><label for="c-kind">種類</label><select id="c-kind">${Object.entries(KINDS).filter(([k]) => !['tag', 'project', 'step'].includes(k)).map(([k, l]) => `<option value="${k}" ${k === card.kind ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
     ${image ? `<div class="actions"><button class="btn btn--tinted" id="ocr">文字を読み取る(Gemini)</button></div>` : ''}
+    <div class="sigil-box pad">${cardSigil(card, 44)}<p class="small muted">つながりの紋章: 外の点はタグ、弧はプロジェクト、内の線はつないだカード。つながりが似たカードは模様も似ます。</p></div>
 
     <section class="list-section"><h2 class="list-section__header">タグ</h2>
       <div class="card">
@@ -607,6 +658,8 @@ async function renderCard(id) {
   const q = document.getElementById('c-quote');
   if (q) fields.quote = q;
   autosave(card, fields);
+  // URLを変えたら、前のページの画像は使わず取り直す
+  fields.url.addEventListener('change', () => { if (card.image || card.imageTried) { delete card.image; delete card.imageTried; save(card); setTimeout(fillImages, 800); } });
   grow(fields.body);
   fields.body.addEventListener('input', () => grow(fields.body));
   document.getElementById('c-kind').addEventListener('change', async e => { card.kind = e.target.value; await save(card); renderCard(id); });
@@ -1085,7 +1138,7 @@ async function takeCapture() {
 async function route() {
   const [name, arg] = location.hash.replace(/^#/, '').split('/');
   window.scrollTo(0, 0);
-  linkCache = null;
+  linkCache = slotCache = null;
   switch (name) {
     case 'all': return renderAll();
     case 'tags': return renderTags();
@@ -1110,12 +1163,54 @@ document.body.prepend(sentinel);
 new IntersectionObserver(([e]) => nav.classList.toggle('is-collapsed', !e.isIntersecting), { threshold: 0 }).observe(sentinel);
 
 // 他の端末の変更を受け取ったら読み直す。入力中は画面を作り直さない(次に画面を移ったときに反映される)
+// Webページの代表画像を、ハブに頼んで取ってくる(アプリからは他のサイトを直接読めないため)。
+// 1回に30件まで、1件ずつ。ハブが古くて画像を返さないときは、印を付けずにやめる(新しいハブで後から取れるように)
+let fillingImages = false;
+async function fillImages() {
+  if (fillingImages) return;
+  const [url, token] = await Promise.all([db.getMeta('syncUrl', ''), db.getMeta('syncToken', '')]);
+  if (!url || !token || !navigator.onLine) return;
+  fillingImages = true;
+  let found = 0, stopped = false;
+  try {
+    for (const c of state.cards.filter(needsImage).slice(0, 30)) {
+      const asked = c.url;
+      let data;
+      try {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token, meta: asked }), redirect: 'follow' });
+        data = await res.json();
+      } catch { stopped = true; break; }
+      if (!data || !data.ok || typeof data.image !== 'string') { stopped = true; break; }
+      const card = byId(c.id);
+      // 待っている間にURLが変わっていたら、前のページの答えは使わない
+      if (!card || card.imageTried || card.url !== asked) continue;
+      card.imageTried = true;
+      if (!card.image && /^https:\/\//i.test(data.image)) { card.image = data.image; found++; }
+      // 見出しのないカードには、ページの題名(YouTubeは動画の題名)を見出しに
+      const head = typeof data.text === 'string' ? data.text.split('\n')[0].trim() : '';
+      if (!card.title && head) { card.title = head.slice(0, 120); found++; }
+      await save(card, { touch: false });
+    }
+  } finally {
+    fillingImages = false;
+  }
+  if (found) await refreshView();
+  // 30件を超えて残っていれば、少し置いて次の30件へ(ハブに断られたときは続けない)
+  if (!stopped && state.cards.some(needsImage)) setTimeout(fillImages, 3000);
+}
+async function refreshView() {
+  const a = document.activeElement;
+  const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
+  if (!typing && !location.hash.startsWith('#settings') && !location.hash.startsWith('#card/')) { const y = scrollY; await route(); scrollTo(0, y); }
+}
+
 async function onRemoteChange() {
   await load();
   await resolvePendingTags();
   const a = document.activeElement;
   const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
   if (!typing && !location.hash.startsWith('#settings')) { const y = scrollY; await route(); scrollTo(0, y); }
+  fillImages();
 }
 
 (async function start() {
@@ -1133,6 +1228,7 @@ async function onRemoteChange() {
   await takeCapture();
   route();
   sync.schedule(300);
+  setTimeout(fillImages, 4000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync.schedule(300); });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();

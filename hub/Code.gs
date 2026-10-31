@@ -37,6 +37,13 @@ function doPost(e) {
   try { req = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'bad json' }); }
   const token = PropertiesService.getScriptProperties().getProperty('TOKEN');
   if (!token || req.token !== token) return json_({ ok: false, error: 'unauthorized' });
+  // アプリから、URLの代表画像と見出しを頼まれたとき(アプリからはページを直接読めないため)
+  if (req.meta) {
+    const u = String(req.meta);
+    if (!/^https?:\/\//i.test(u)) return json_({ ok: false, error: 'bad url' });
+    const meta = fetchMeta_(u);
+    return json_({ ok: true, image: meta.image, text: meta.text });
+  }
   if (req.capture) {
     const card = captureCard_(req.capture, new Date());
     if (!card) return json_({ ok: false, error: 'empty' });
@@ -113,46 +120,67 @@ function captureCard_(cap, now) {
   const iso = now.toISOString();
   // 本文からURLそのものは外す(URL欄に入るため)。残った一言などはそのまま本文に
   let body = url ? text.split(url).join('').trim() : text;
-  // タイトルが来ていないURLは、ページの見出しやポストの文を取ってきて本文の先頭に置く(取れなければ何もしない)
-  if (url && !title) {
-    const found = fetchSummary_(url);
-    if (found) body = [found, body].filter(Boolean).join('\n\n');
+  // URLはページを1回だけ読み、代表画像(og:image)を取る。タイトルが来ていなければ見出しやポストの文も本文の先頭に置く
+  let image = /^https:\/\//i.test(String(cap.image || '')) ? String(cap.image) : '';
+  if (url && (!title || !image)) {
+    const meta = fetchMeta_(url);
+    if (!title && meta.text) body = [meta.text, body].filter(Boolean).join('\n\n');
+    if (!image) image = meta.image;
   }
   return {
     id: now.getTime().toString(36) + Math.random().toString(36).slice(2, 8),
-    kind, title, body, url, quote,
+    kind, title, body, url, quote, image, imageTried: !!url,
     tags: [], pendingTags: tags, inbox: true, action: null, createdAt: iso, updatedAt: iso,
     source: String(cap.source || ''),
   };
 }
 
-// URLから、本文に入れる短い説明を取ってくる。
+// URLから、本文に入れる短い説明と、カードに出す代表画像を取ってくる。{ text, image } を返し、取れなければ空文字。
 // X(旧Twitter)はページ本体が文字を返さないため、公式の oEmbed(publish.twitter.com)でポストの文と投稿者を取る。
-// YouTube も oEmbed で題名とチャンネル名を取る。ほかはページの og:title か <title>。
-function fetchSummary_(url) {
+// YouTube も oEmbed で題名とチャンネル名を取る(画像はアプリが動画idから作る)。ほかはページの og:title か <title> と og:image。
+function fetchMeta_(url) {
+  const none = { text: '', image: '' };
   try {
     if (/^https?:\/\/(www\.|mobile\.)?(x|twitter)\.com\/[^/]+\/status\/\d+/i.test(url)) {
       const j = fetchJson_('https://publish.twitter.com/oembed?omit_script=1&dnt=true&url=' + encodeURIComponent(url.replace(/\/\/(www\.|mobile\.)?x\.com\//i, '//twitter.com/')));
       if (j && j.html) {
         const m = /<p[^>]*>([\s\S]*?)<\/p>/i.exec(j.html);
         const tweet = m ? htmlText_(m[1]) : '';
-        if (tweet) return tweet + (j.author_name ? '\n— ' + j.author_name : '');
+        if (tweet) return { text: tweet + (j.author_name ? '\n— ' + j.author_name : ''), image: '' };
       }
-      return '';
+      return none;
     }
     if (/^https?:\/\/((www|m)\.)?(youtube\.com|youtu\.be)\//i.test(url)) {
       const j = fetchJson_('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(url));
-      return j && j.title ? j.title + (j.author_name ? '\n— ' + j.author_name : '') : '';
+      return { text: j && j.title ? j.title + (j.author_name ? '\n— ' + j.author_name : '') : '', image: '' };
     }
     const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: { 'User-Agent': 'Mozilla/5.0 (idea-hub)' } });
-    if (res.getResponseCode() >= 400) return '';
+    if (res.getResponseCode() >= 400) return none;
     const html = String(res.getContentText()).slice(0, 200000);
-    const og = /<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']*)["']/i.exec(html) || /<meta[^>]+content=["']([^"']*)["'][^>]*property=["']og:title["']/i.exec(html);
-    const t = og ? og[1] : ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [])[1] || '');
-    return htmlText_(t).slice(0, 200);
+    const t = metaContent_(html, 'og:title') || ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [])[1] || '');
+    const img = metaContent_(html, 'og:image') || metaContent_(html, 'twitter:image') || metaContent_(html, 'og:image:url');
+    return { text: htmlText_(t).slice(0, 200), image: absUrl_(htmlText_(img), url) };
   } catch (err) {
-    return '';
+    return none;
   }
+}
+function fetchSummary_(url) { return fetchMeta_(url).text; }
+
+// <meta property|name="key" content="…"> の content(属性の順はどちらでも)
+function metaContent_(html, key) {
+  const k = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp('<meta[^>]+(?:property|name)=["\']' + k + '["\'][^>]*content=["\']([^"\']*)["\']', 'i').exec(html)
+    || new RegExp('<meta[^>]+content=["\']([^"\']*)["\'][^>]*(?:property|name)=["\']' + k + '["\']', 'i').exec(html);
+  return m ? m[1].trim() : '';
+}
+// 相対URLを絶対に。https でない画像は使わない(アプリは https のページなので混在表示になる)
+function absUrl_(u, base) {
+  u = String(u || '').trim();
+  if (!u) return '';
+  if (/^\/\//.test(u)) u = 'https:' + u;
+  else if (/^\//.test(u)) { const m = /^(https?:\/\/[^/]+)/i.exec(base); u = m ? m[1] + u : ''; }
+  else if (!/^https?:\/\//i.test(u)) u = String(base).replace(/[^/]*([?#].*)?$/, '') + u;
+  return /^https:\/\//i.test(u) ? u : '';
 }
 
 function fetchJson_(u) {

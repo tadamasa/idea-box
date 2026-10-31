@@ -1,9 +1,13 @@
-import { send, settings } from './send.js';
+import { send, settings, pageImage } from './send.js';
+
+let image = '';
 
 const $ = id => document.getElementById(id);
 
+let tab0 = null;
 async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  tab0 = tab || null;
   if (tab) {
     $('title').value = tab.title || '';
     $('url').value = tab.url || '';
@@ -11,6 +15,7 @@ async function init() {
       const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => String(getSelection()) });
       $('quote').value = (r && r.result || '').trim();
     } catch { /* chrome:// など、読めないページ */ }
+    image = await pageImage(tab.id);
   }
   const s = await settings();
   $('hubUrl').value = s.hubUrl;
@@ -29,6 +34,8 @@ $('send').addEventListener('click', async () => {
       title: $('title').value.trim(),
       url: $('url').value.trim(),
       quote: $('quote').value.trim(),
+      // 送る前にURLを書き換えたら、そのページの画像ではなくなるので送らない
+      image: $('url').value.trim() === (tab0 && tab0.url) ? image : '',
       text: $('text').value.trim(),
       tags: $('tags').value.split(/[\s,、]+/).map(t => t.replace(/^#+/, '')).filter(Boolean),
     });

@@ -212,3 +212,24 @@ button.chip-tag { min-height: 24px; padding: 1px 8px; font-size: 12px; line-heig
   .content, .nav__bar, .nav__title-large, .tab-warning { max-width: 1080px; }
   .list--inset.items:not(#steps) { display: grid; grid-template-columns: 1fr 1fr; }
 }
+
+/* カードの小さな絵と、つながりの紋章 */
+.item__head { display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; }
+.item__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.thumb { flex: none; width: 64px; height: 64px; border-radius: 8px; overflow: hidden; background-color: var(--bg-fill-quaternary, var(--bg-fill-tertiary)); margin-top: 2px; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.item[data-kind="video"] .thumb { width: 88px; height: 50px; }
+
+.item__aside { flex: none; position: relative; display: flex; align-items: flex-start; }
+.item__aside--sigil { padding-top: 2px; }
+.sigil-badge { position: absolute; left: -8px; bottom: -6px; width: 26px; height: 26px; border-radius: 50%; background-color: var(--bg-grouped-secondary); display: grid; place-items: center; }
+.item__aside .thumb { margin-top: 0; }
+.sigil { flex: none; color: var(--color-label-secondary); }
+.sigil--empty { color: var(--color-label-quaternary, var(--color-label-tertiary)); }
+.sigil-lg { color: var(--color-label); }
+.thumb-hero:empty { display: none; }
+.thumb-hero .thumb { width: 100%; height: auto; max-height: 180px; border-radius: 0; margin: 0; background: none; }
+.thumb-hero .thumb img { height: auto; max-height: 180px; object-fit: cover; }
+.sigil-box { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-3) 0 0; }
+.sigil-box .sigil { color: var(--color-label); }
+.sigil-box p { margin: 0; }

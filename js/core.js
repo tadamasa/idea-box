@@ -44,10 +44,11 @@ export function parseCapture(search) {
   const quote = (p.get('quote') || '').trim();
   const tags = (p.get('tags') || '').split(/[,、\s]+/).map(normTag).filter(Boolean);
   if (!text && !url && !title && !quote) return null;
-  return { text, url, title, quote, kind: (p.get('kind') || '').trim(), tags };
+  const image = (p.get('image') || '').trim();
+  return { text, url, title, quote, kind: (p.get('kind') || '').trim(), tags, ...(/^https:\/\//i.test(image) ? { image } : {}) };
 }
 
-export function newCard({ id, now = new Date().toISOString(), text = '', url = '', title = '', quote = '', kind = '', tags = [], inbox = true }) {
+export function newCard({ id, now = new Date().toISOString(), text = '', url = '', title = '', quote = '', kind = '', tags = [], inbox = true, image = '' }) {
   const u = url || extractUrl(text);
   // 本文がURLだけなら本文は空にして、URL欄に移す
   const body = u && text.trim() === u ? '' : text.trim();
@@ -58,6 +59,7 @@ export function newCard({ id, now = new Date().toISOString(), text = '', url = '
     body,
     url: u,
     quote: quote.trim(),
+    ...(/^https:\/\//i.test(image) ? { image } : {}),
     tags: [...new Set(tags)],
     inbox,
     action: null,
@@ -306,4 +308,68 @@ export function parseSteps(text, existing = []) {
 
 export function isOverdue(action, today) {
   return !!(action && !action.done && action.due && action.due < today);
+}
+
+// ---------- サムネイル ----------
+// YouTube の動画id(watch?v= / youtu.be / shorts / embed)
+export function youtubeId(url) {
+  const m = /(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/i.exec(String(url || ''));
+  return m ? m[1] : '';
+}
+// カードの小さな絵の出どころ。photo: 端末に保存した写真 / src: 画像のURL / なければ null
+export function thumbOf(card) {
+  if (!card) return null;
+  if (card.kind === 'photo') return { photo: true };
+  const yt = youtubeId(card.url);
+  if (yt) return { src: `https://i.ytimg.com/vi/${yt}/mqdefault.jpg` };
+  if (card.image && /^https:\/\//i.test(card.image)) return { src: card.image };
+  return null;
+}
+// まだハブに問い合わせていないURLカードか(代表画像か見出しが欠けているもの)
+export const needsImage = c => !c.deleted && (c.kind === 'url' || c.kind === 'video') && /^https?:\/\//i.test(c.url || '') && !c.imageTried
+  && ((!c.image && !youtubeId(c.url)) || !c.title);
+
+// ---------- つながりの紋章 ----------
+// カードのつながりから小さな模様の部品を決める。同じつながりは同じ位置に同じ印が出るので、
+// つながりの似たカードは模様も似る(色は使わない)。内から外へ:
+//  arcs:  プロジェクト → 中心の輪の8か所の弧
+//  dots:  タグ → 12方向×内外2重の24か所の点
+//  ticks: つないだカード → 外枠の12か所の刻み。位置は二枚の組から決まるので、つながった二枚には同じ刻みが出る
+const fnv = s => { let h = 2166136261; for (const ch of String(s)) h = Math.imul(h ^ ch.codePointAt(0), 16777619) >>> 0; h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995) >>> 0; return (h ^ (h >>> 15)) >>> 0; };
+// タグの点の位置を、タグ全体で重ならないように決める。作った順に、ハッシュの位置が埋まっていれば次の空きへ。
+// 先に作ったタグの位置は、あとからタグが増えても変わらない(24個を超えたら重なりを許す)
+export function tagSlots(tagCards) { return allocSlots(tagCards, 't', 24); }
+// プロジェクトの弧も同じやり方で、8か所に重ならないように
+export function projectSlots(projectCards) { return allocSlots(projectCards, 'p', 8); }
+function allocSlots(cards, prefix, n) {
+  const map = new Map(), used = new Set();
+  const list = [...cards].filter(t => !t.deleted).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '') || String(a.id).localeCompare(String(b.id)));
+  for (const t of list) {
+    let s = fnv(prefix + t.id) % n;
+    for (let i = 0; i < n && used.has(s); i++) s = (s + 1) % n;
+    used.add(s); map.set(t.id, s);
+  }
+  return map;
+}
+export function sigil(card, { projectIds = [], linkIds = [], slots = null, pslots = null } = {}) {
+  const uniq = a => [...new Set(a)].sort((x, y) => x - y);
+  return {
+    dots: uniq((card.tags || []).map(t => (slots && slots.has(t) ? slots.get(t) : fnv('t' + t) % 24))),
+    arcs: uniq(projectIds.map(p => (pslots && pslots.has(p) ? pslots.get(p) : fnv('p' + p) % 8))),
+    ticks: uniq(linkIds.map(l => fnv('l' + [card.id, l].sort().join('|')) % 12)),
+  };
+}
+// 紋章をSVGの文字列に(size は表示の大きさ、図は24×24の座標で描く)
+export function sigilSvg(sg, size = 22) {
+  const c = 12, pt = (r, a) => [c + r * Math.sin(a), c - r * Math.cos(a)].map(v => v.toFixed(2));
+  const parts = [];
+  for (const s of sg.arcs) {
+    const a0 = (s / 8) * Math.PI * 2 + 0.22, a1 = ((s + 1) / 8) * Math.PI * 2 - 0.22;
+    const [x0, y0] = pt(4, a0), [x1, y1] = pt(4, a1);
+    parts.push(`<path d="M${x0} ${y0}A4 4 0 0 1 ${x1} ${y1}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`);
+  }
+  for (const s of sg.dots) { const [x, y] = pt(s < 12 ? 9 : 6.2, ((s % 12) / 12) * Math.PI * 2 + (s < 12 ? 0 : Math.PI / 12)); parts.push(`<circle cx="${x}" cy="${y}" r="1.9"/>`); }
+  for (const s of sg.ticks) { const a = (s / 12) * Math.PI * 2 + Math.PI / 12; const [x0, y0] = pt(10.2, a), [x1, y1] = pt(12, a); parts.push(`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`); }
+  const empty = !parts.length;
+  return `<svg class="sigil${empty ? ' sigil--empty' : ''}" viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="11.1" fill="none" stroke="currentColor" stroke-width="0.7" opacity="0.3"/>${empty ? '<circle cx="12" cy="12" r="1.2" opacity="0.5"/>' : parts.join('')}</svg>`;
 }
