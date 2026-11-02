@@ -1,7 +1,7 @@
 // npm test で実行。画面に触れない処理と、アイデアハブ(Code.gs)の動きを確かめる。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps, sortCards, linkIndex, isArchived, setDone } from '../js/core.js';
+import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps, sortCards, linkIndex, isArchived, setDone, keepsNear } from '../js/core.js';
 import { splitOcr } from '../js/gemini.js';
 import { loadHub } from './gas-mock.mjs';
 
@@ -387,4 +387,14 @@ test('アーカイブ: 完了したカードが入り、一覧に戻した印は
   assert.equal(isArchived(c), true); // 付け直せばまたアーカイブへ
   // 前から完了していたカード(印なし)もアーカイブに入る
   assert.equal(isArchived({ action: { done: true } }), true);
+});
+
+test('近いカード: アーカイブでも完了メモがあれば候補に残り、メモの言葉も似ている度合いに使う', () => {
+  const done = (id, note) => ({ id, kind: 'memo', title: '', body: 'x', quote: '', tags: [], action: { text: 'a', done: true, doneNote: note } });
+  assert.equal(keepsNear(done('a', '')), false);
+  assert.equal(keepsNear(done('b', '箱根の温泉はよかった')), true);
+  assert.equal(keepsNear({ id: 'c', action: null }), true);
+  const target = { id: 't', kind: 'memo', title: '', body: '箱根の温泉に行きたい', quote: '', tags: [] };
+  const near = nearCards([done('b', '箱根の温泉はよかった')].filter(keepsNear), target);
+  assert.equal(near[0].card.id, 'b');
 });

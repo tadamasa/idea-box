@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, BASE_KINDS, KIND_FIELDS, KIND_ICONS, kindIconSvg, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, isArchived, setDone, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
+import { KINDS, BASE_KINDS, KIND_FIELDS, KIND_ICONS, kindIconSvg, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, isArchived, setDone, keepsNear, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -624,7 +624,7 @@ async function renderCard(id) {
   setTab(card.inbox ? 'inbox' : 'all');
   setTitle(kindName(card.kind) || 'カード', { back: true });
   const image = card.kind === 'photo' ? await db.get('images', id) : null;
-  const near = nearCards(current(), card);
+  const near = nearCards(items().filter(keepsNear), card);
   const names = tagNames();
   const refs = (card.refs || []).map(byId).filter(c => c && !c.deleted);
   const myProjects = linked(id, c => c.kind === 'project');
@@ -662,7 +662,7 @@ async function renderCard(id) {
           <div class="row"><input type="checkbox" id="a-done" ${a.done ? 'checked' : ''} aria-label="完了"><input id="a-text" class="row-left" placeholder="やること" value="${esc(a.text)}"></div>
           <div class="row"><label for="a-due">期限(任意)</label><input id="a-due" type="date" value="${esc(a.due || '')}"></div>
           ${a.done ? `<textarea class="field field--desc" id="a-note" placeholder="やってみてどうだった?(任意)" aria-label="完了メモ">${esc(a.doneNote || '')}</textarea>` : ''}
-          ${a.done ? `<p class="row small muted">${isArchived(card) ? 'アーカイブにあります。受信箱・すべて・タグには出ません。' : 'アーカイブから出して、一覧に出しています。'}</p>` : ''}
+          ${a.done ? `<p class="row small muted">${isArchived(card) ? `アーカイブにあります。受信箱・すべて・タグには出ません。${(a.doneNote || '').trim() ? '完了メモがあるので、近いカードには出ます。' : '完了メモを書くと、近いカードには出ます。'}` : 'アーカイブから出して、一覧に出しています。'}</p>` : ''}
           <div class="row">${a.done ? `<button class="btn btn--small btn--plain" id="a-archive">${isArchived(card) ? '一覧に戻す' : 'アーカイブに入れる'}</button>` : ''}<button class="btn btn--small btn--plain danger" id="a-remove">アクションを外す</button></div>`
         : `<div class="row"><input id="a-new" class="row-left" placeholder="このカードから、やることを1つ"><button class="btn btn--small btn--tinted" id="a-add">追加</button></div>`}
       </div>

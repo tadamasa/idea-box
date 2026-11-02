@@ -28,6 +28,9 @@ export function setDone(card, done, now = new Date().toISOString()) {
   delete card.archived;
   return card;
 }
+// 近いカードの候補に残すか。アーカイブでも、完了メモ(やってみてどうだった?)を書いたものは
+// 経験として後の連想の種になるので残す
+export const keepsNear = c => !isArchived(c) || !!(c.action.doneNote || '').trim();
 
 // ---------- 種別(情報ソースの種類) ----------
 // 最初からある種別。fields はカードを作るときに出す欄: url=リンク、quote=引用、photo=写真
@@ -225,12 +228,13 @@ function jaccard(a, b) {
 // 返り値: [{ card, shared: [tagId], score }]
 export function nearCards(cards, target, { limit = 6 } = {}) {
   const tags = new Set(target.tags || []);
-  const grams = bigrams([target.title, target.body, target.quote].join(' '));
+  const text = c => [c.title, c.body, c.quote, c.action && c.action.doneNote].join(' ');
+  const grams = bigrams(text(target));
   const out = [];
   for (const c of cards) {
     if (c.id === target.id || !isInfo(c)) continue;
     const shared = (c.tags || []).filter(t => tags.has(t));
-    const sim = jaccard(grams, bigrams([c.title, c.body, c.quote].join(' ')));
+    const sim = jaccard(grams, bigrams(text(c)));
     const score = shared.length + sim * 2;
     if (shared.length || sim >= 0.12) out.push({ card: c, shared, score });
   }
