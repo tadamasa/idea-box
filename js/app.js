@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, BASE_KINDS, KIND_FIELDS, KIND_ICONS, kindIconSvg, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
+import { KINDS, BASE_KINDS, KIND_FIELDS, KIND_ICONS, kindIconSvg, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, isArchived, setDone, keepsNear, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -89,6 +89,8 @@ function setTab(tab) {
 // ---------- データ ----------
 const live = () => state.cards.filter(c => !c.deleted);
 const items = () => live().filter(isInfo);
+// アーカイブ(完了したカード)を除いた情報カード。受信箱・すべて・タグ・近いカードはこちらを使う
+const current = () => items().filter(c => !isArchived(c));
 const tags = () => live().filter(c => c.kind === 'tag');
 const projects = () => live().filter(c => c.kind === 'project');
 const byId = id => state.cards.find(c => c.id === id);
@@ -270,7 +272,9 @@ function tagChips(card, names = tagNames()) {
 // filterable: タグとプロジェクトを押せるボタンにする(「すべて」の一覧)。リンクの中にボタンを入れないよう、行の下側を <a> の外に出す
 function cardRow(card, { names = tagNames(), inboxButton = false, filterable = false } = {}) {
   const snippet = card.title ? (card.body || card.quote || '') : (card.body || '').split('\n').slice(1).join(' ');
-  const action = card.action && !card.action.done ? `<span class="badge${isOverdue(card.action, today()) ? ' badge--warn' : ''}">アクション${card.action.due ? ` ${esc(shortDue(card.action.due))}` : ''}</span>` : '';
+  const action = !card.action ? ''
+    : card.action.done ? `<span class="badge">完了${card.action.doneAt ? ` ${esc(shortDue(card.action.doneAt.slice(0, 10)))}` : ''}</span>`
+    : `<span class="badge${isOverdue(card.action, today()) ? ' badge--warn' : ''}">アクション${card.action.due ? ` ${esc(shortDue(card.action.due))}` : ''}</span>`;
   const head = `<span class="item__head"><span class="item__text">
       <span class="item__kind kind-${esc(card.kind)}">${kindIcon(card.kind)}${esc(kindName(card.kind))}</span>
       <span class="item__title">${projectDot(card)}${esc(displayTitle(card))}</span>
@@ -361,7 +365,7 @@ const tagOptions = () => { const use = tagUse(); return tags().sort((a, b) => (u
 async function renderInbox() {
   setTab('inbox');
   setTitle('受信箱');
-  const inbox = items().filter(c => c.inbox).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const inbox = current().filter(c => c.inbox).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const names = tagNames();
   const ck = state.capKind && kindOf(state.capKind) && !kindOf(state.capKind).hidden ? kindOf(state.capKind) : null;
   if (!ck) state.capKind = '';
@@ -431,7 +435,8 @@ async function renderInbox() {
 
 // ---------- すべて(探す) ----------
 // 種類の絞り込み: すべて + 隠していない種別 + アクション
-const filters = () => [['', 'すべて'], ...kinds().filter(k => !k.hidden || k.key === state.kindFilter).map(k => [k.key, k.title]), ['action', 'アクション']];
+// アーカイブ: 完了したカードだけを出す(ほかの絞り込みでは、完了したカードは出ない)
+const filters = () => [['', 'すべて'], ...kinds().filter(k => !k.hidden || k.key === state.kindFilter).map(k => [k.key, k.title]), ['action', 'アクション'], ['archive', 'アーカイブ']];
 
 // 「すべて」の条件はこの端末に覚えておく(同期はしない)。次に開いたときも同じ条件で並ぶ
 const FILTER_KEYS = ['query', 'kindFilter', 'tagFilter', 'projectFilter', 'sort'];
@@ -461,11 +466,14 @@ async function renderAll() {
   const draw = () => {
     const names = tagNames();
     const inProj = state.projectFilter ? links().get(state.projectFilter) || new Set() : null;
+    const archive = state.kindFilter === 'archive';
+    const hit = c => (!state.tagFilter || (c.tags || []).includes(state.tagFilter)) && (!inProj || inProj.has(c.id)) && matches(c, state.query, names);
     const list = sortCards(items()
-      .filter(c => !state.kindFilter || (state.kindFilter === 'action' ? c.action : c.kind === state.kindFilter))
-      .filter(c => !state.tagFilter || (c.tags || []).includes(state.tagFilter))
-      .filter(c => !inProj || inProj.has(c.id))
-      .filter(c => matches(c, state.query, names)), state.sort);
+      .filter(c => archive ? isArchived(c) : !isArchived(c))
+      .filter(c => archive || !state.kindFilter || (state.kindFilter === 'action' ? c.action : c.kind === state.kindFilter))
+      .filter(hit), state.sort);
+    // 探しているものがアーカイブにだけあるときのために、アーカイブ側で当たる件数を添える(語や条件で探しているときだけ)
+    const elsewhere = !archive && (state.tagFilter || state.projectFilter || state.query.trim()) ? items().filter(c => isArchived(c) && hit(c)).length : 0;
     // 検索語は再描画せずに変わるので、絞り込み中かどうかは描くたびに見る
     const any = !!(state.kindFilter || state.tagFilter || state.projectFilter || state.query.trim());
     document.getElementById('count').textContent = any ? `${list.length}件` : '';
@@ -473,7 +481,12 @@ async function renderAll() {
     document.getElementById('results').innerHTML = list.length
       ? `<ul class="list list--inset items">${list.slice(0, state.shown).map(c => cardRow(c, { names, filterable: true })).join('')}</ul>
          ${list.length > state.shown ? `<div class="actions"><button class="btn btn--plain" id="more">もっと見る</button></div>` : ''}`
-      : `<div class="empty"><p class="empty__message">${items().length ? '見つかりませんでした' : 'まだ何もありません。受信箱から放り込んでください。'}</p></div>`;
+      : `<div class="empty"><p class="empty__message">${archive ? 'アーカイブはまだ空です。アクションを完了したカードがここに入ります。' : items().length ? '見つかりませんでした' : 'まだ何もありません。受信箱から放り込んでください。'}</p></div>`;
+    document.getElementById('results').insertAdjacentHTML('beforeend', archive
+      ? '<p class="pad small muted">アクションを完了したカードです。開いて「一覧に戻す」か、完了を外すと元の一覧に戻ります。</p>'
+      : elsewhere ? `<div class="actions"><button class="btn btn--small btn--plain" id="to-archive">アーカイブにも ${elsewhere}件</button></div>` : '');
+    const toArchive = document.getElementById('to-archive');
+    if (toArchive) toArchive.addEventListener('click', () => { state.kindFilter = 'archive'; state.shown = 100; renderAll(); });
     const more = document.getElementById('more');
     if (more) more.addEventListener('click', () => { state.shown += 100; draw(); });
     // 行のタグ・プロジェクトを押すと、それで絞る
@@ -546,7 +559,8 @@ async function renderTag(id) {
   setTab('tags');
   setTitle(`#${tag.title}`, { back: true });
   const names = tagNames();
-  const list = items().filter(c => (c.tags || []).includes(id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const list = current().filter(c => (c.tags || []).includes(id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const archived = items().filter(c => isArchived(c) && (c.tags || []).includes(id)).length;
   const rel = relatedTags(state.cards, id);
   $view.innerHTML = `
     <div class="card">
@@ -556,7 +570,8 @@ async function renderTag(id) {
     ${rel.length ? `<section class="list-section"><h2 class="list-section__header">よく一緒に付くタグ</h2>
       <div class="tag-cloud">${rel.map(r => `<a class="chip-tag" href="#tag/${esc(r.tagId)}">#${esc(names.get(r.tagId) || '')} <small>${r.count}</small></a>`).join('')}</div></section>` : ''}
     <section class="list-section"><h2 class="list-section__header">このタグのカード</h2>
-      ${list.length ? `<ul class="list list--inset items">${list.map(c => cardRow(c, { names })).join('')}</ul>` : '<p class="pad muted">まだありません</p>'}
+      ${list.length ? `<ul class="list list--inset items">${list.map(c => cardRow(c, { names })).join('')}</ul>` : `<p class="pad muted">${archived ? '完了したカードだけです' : 'まだありません'}</p>`}
+      ${archived ? `<p class="list-section__footer"><button class="btn btn--small btn--plain" id="tag-archive">アーカイブにも ${archived}件</button></p>` : ''}
     </section>
     <div class="actions">
       <button class="btn btn--tinted" id="make-summary" ${list.length ? '' : 'disabled'}>まとめカードを作る</button>
@@ -568,6 +583,8 @@ async function renderTag(id) {
     setTitle(`#${tag.title}`, { back: true });
   });
   autosave(tag, { body: document.getElementById('tag-body') });
+  const ta = document.getElementById('tag-archive');
+  if (ta) ta.addEventListener('click', () => { Object.assign(state, { kindFilter: 'archive', tagFilter: id, projectFilter: '', query: '', shown: 100 }); location.hash = '#all'; });
   document.getElementById('make-summary').addEventListener('click', async () => {
     const lines = list.map(c => `- ${displayTitle(c)}`).join('\n');
     const card = await addCard({ kind: 'summary', title: `${tag.title} のまとめ`, text: `\n\n---\n元にしたカード:\n${lines}`, tags: [tag.title] });
@@ -607,7 +624,7 @@ async function renderCard(id) {
   setTab(card.inbox ? 'inbox' : 'all');
   setTitle(kindName(card.kind) || 'カード', { back: true });
   const image = card.kind === 'photo' ? await db.get('images', id) : null;
-  const near = nearCards(items(), card);
+  const near = nearCards(items().filter(keepsNear), card);
   const names = tagNames();
   const refs = (card.refs || []).map(byId).filter(c => c && !c.deleted);
   const myProjects = linked(id, c => c.kind === 'project');
@@ -645,7 +662,8 @@ async function renderCard(id) {
           <div class="row"><input type="checkbox" id="a-done" ${a.done ? 'checked' : ''} aria-label="完了"><input id="a-text" class="row-left" placeholder="やること" value="${esc(a.text)}"></div>
           <div class="row"><label for="a-due">期限(任意)</label><input id="a-due" type="date" value="${esc(a.due || '')}"></div>
           ${a.done ? `<textarea class="field field--desc" id="a-note" placeholder="やってみてどうだった?(任意)" aria-label="完了メモ">${esc(a.doneNote || '')}</textarea>` : ''}
-          <div class="row"><button class="btn btn--small btn--plain danger" id="a-remove">アクションを外す</button></div>`
+          ${a.done ? `<p class="row small muted">${isArchived(card) ? `アーカイブにあります。受信箱・すべて・タグには出ません。${(a.doneNote || '').trim() ? '完了メモがあるので、近いカードには出ます。' : '完了メモを書くと、近いカードには出ます。'}` : 'アーカイブから出して、一覧に出しています。'}</p>` : ''}
+          <div class="row">${a.done ? `<button class="btn btn--small btn--plain" id="a-archive">${isArchived(card) ? '一覧に戻す' : 'アーカイブに入れる'}</button>` : ''}<button class="btn btn--small btn--plain danger" id="a-remove">アクションを外す</button></div>`
         : `<div class="row"><input id="a-new" class="row-left" placeholder="このカードから、やることを1つ"><button class="btn btn--small btn--tinted" id="a-add">追加</button></div>`}
       </div>
     </section>
@@ -717,7 +735,15 @@ async function renderCard(id) {
     const set = async patch => { Object.assign(card.action, patch); await save(card); };
     document.getElementById('a-done').addEventListener('change', async e => {
       if (e.target.checked) celebrate(e.target);
-      await set({ done: e.target.checked, doneAt: e.target.checked ? new Date().toISOString() : null });
+      setDone(card, e.target.checked);
+      await save(card);
+      if (e.target.checked) toast('完了しました。カードはアーカイブに入ります');
+      renderCard(id);
+    });
+    const arc = document.getElementById('a-archive');
+    if (arc) arc.addEventListener('click', async () => {
+      if (isArchived(card)) { card.archived = false; toast('一覧に戻しました'); } else { delete card.archived; toast('アーカイブに入れました'); }
+      await save(card);
       renderCard(id);
     });
     let t;
@@ -880,7 +906,7 @@ async function renderProject(id, { suggestions = null } = {}) {
   $view.querySelectorAll('#steps .item__check').forEach(cb => cb.addEventListener('change', async () => {
     const st = byId(cb.closest('.item').dataset.id);
     if (cb.checked) celebrate(cb);
-    Object.assign(st.action, { done: cb.checked, doneAt: cb.checked ? new Date().toISOString() : null });
+    setDone(st, cb.checked);
     await save(st);
     renderProject(id);
   }));
@@ -987,7 +1013,8 @@ async function renderStep(st) {
   const set = async patch => { Object.assign(st, patch); await save(st); };
   document.getElementById('st-done').addEventListener('change', async e => {
     if (e.target.checked) celebrate(e.target);
-    await set({ action: { ...st.action, done: e.target.checked, doneAt: e.target.checked ? new Date().toISOString() : null } });
+    setDone(st, e.target.checked);
+    await save(st);
     renderStep(st);
   });
   const timers = {};
@@ -1081,10 +1108,9 @@ async function renderActions() {
   $view.querySelectorAll('.item__check').forEach(cb => cb.addEventListener('change', async () => {
     const card = byId(cb.closest('.item').dataset.id);
     if (cb.checked) celebrate(cb);
-    card.action.done = cb.checked;
-    card.action.doneAt = cb.checked ? new Date().toISOString() : null;
+    setDone(card, cb.checked);
     await save(card);
-    if (cb.checked) toast('完了しました。感想はカードに書けます');
+    if (cb.checked) toast(card.kind === 'step' ? '完了しました。感想はカードに書けます' : '完了しました。カードはアーカイブに入ります');
     renderActions();
   }));
 }

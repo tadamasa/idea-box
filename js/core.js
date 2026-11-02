@@ -17,6 +17,21 @@ export const STRUCT_KINDS = ['tag', 'project', 'step', 'kinddef'];
 // 受信箱・すべて・近いカードに並べる「情報」のカードか(タグ・プロジェクト・手順は別の画面で扱う)
 export const isInfo = c => !c.deleted && !STRUCT_KINDS.includes(c.kind);
 
+// ---------- アーカイブ ----------
+// アクションを完了したカードはアーカイブに入り、受信箱・すべて・タグ・近いカードに出なくなる。
+// 印は付けず「完了しているか」で決めるので、前から完了していたカードもそのまま入る。
+// アーカイブから出したカードだけ archived: false を持つ(完了を外す・付け直すと、この印は消える)
+export const isArchived = c => !!(c && c.action && c.action.done && c.archived !== false);
+// 完了の付け外し。付け直したらまたアーカイブに入るよう、archived の印は消す
+export function setDone(card, done, now = new Date().toISOString()) {
+  card.action = { ...card.action, done: !!done, doneAt: done ? now : null };
+  delete card.archived;
+  return card;
+}
+// 近いカードの候補に残すか。アーカイブでも、完了メモ(やってみてどうだった?)を書いたものは
+// 経験として後の連想の種になるので残す
+export const keepsNear = c => !isArchived(c) || !!(c.action.doneNote || '').trim();
+
 // ---------- 種別(情報ソースの種類) ----------
 // 最初からある種別。fields はカードを作るときに出す欄: url=リンク、quote=引用、photo=写真
 // 種別アイコン(線画・1色)。名前 → [呼び名, SVGのpath]。色は付けず文字色に合わせる
@@ -213,12 +228,13 @@ function jaccard(a, b) {
 // 返り値: [{ card, shared: [tagId], score }]
 export function nearCards(cards, target, { limit = 6 } = {}) {
   const tags = new Set(target.tags || []);
-  const grams = bigrams([target.title, target.body, target.quote].join(' '));
+  const text = c => [c.title, c.body, c.quote, c.action && c.action.doneNote].join(' ');
+  const grams = bigrams(text(target));
   const out = [];
   for (const c of cards) {
     if (c.id === target.id || !isInfo(c)) continue;
     const shared = (c.tags || []).filter(t => tags.has(t));
-    const sim = jaccard(grams, bigrams([c.title, c.body, c.quote].join(' ')));
+    const sim = jaccard(grams, bigrams(text(c)));
     const score = shared.length + sim * 2;
     if (shared.length || sim >= 0.12) out.push({ card: c, shared, score });
   }
