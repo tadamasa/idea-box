@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, BASE_KINDS, KIND_FIELDS, KIND_ICONS, kindIconSvg, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, isArchived, setDone, keepsNear, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
+import { KINDS, BASE_KINDS, KIND_FIELDS, KIND_ICONS, kindIconSvg, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, isArchived, setArchived, setDone, archiveNote, keepsNear, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -272,7 +272,8 @@ function tagChips(card, names = tagNames()) {
 // filterable: タグとプロジェクトを押せるボタンにする(「すべて」の一覧)。リンクの中にボタンを入れないよう、行の下側を <a> の外に出す
 function cardRow(card, { names = tagNames(), inboxButton = false, filterable = false } = {}) {
   const snippet = card.title ? (card.body || card.quote || '') : (card.body || '').split('\n').slice(1).join(' ');
-  const action = !card.action ? ''
+  const action = card.archived === true && !(card.action && card.action.done) ? `<span class="badge">アーカイブ${card.archivedAt ? ` ${esc(shortDue(card.archivedAt.slice(0, 10)))}` : ''}</span>`
+    : !card.action ? ''
     : card.action.done ? `<span class="badge">完了${card.action.doneAt ? ` ${esc(shortDue(card.action.doneAt.slice(0, 10)))}` : ''}</span>`
     : `<span class="badge${isOverdue(card.action, today()) ? ' badge--warn' : ''}">アクション${card.action.due ? ` ${esc(shortDue(card.action.due))}` : ''}</span>`;
   const head = `<span class="item__head"><span class="item__text">
@@ -481,9 +482,9 @@ async function renderAll() {
     document.getElementById('results').innerHTML = list.length
       ? `<ul class="list list--inset items">${list.slice(0, state.shown).map(c => cardRow(c, { names, filterable: true })).join('')}</ul>
          ${list.length > state.shown ? `<div class="actions"><button class="btn btn--plain" id="more">もっと見る</button></div>` : ''}`
-      : `<div class="empty"><p class="empty__message">${archive ? 'アーカイブはまだ空です。アクションを完了したカードがここに入ります。' : items().length ? '見つかりませんでした' : 'まだ何もありません。受信箱から放り込んでください。'}</p></div>`;
+      : `<div class="empty"><p class="empty__message">${archive ? 'アーカイブはまだ空です。カードの「アーカイブする」か、アクションを完了すると入ります。' : items().length ? '見つかりませんでした' : 'まだ何もありません。受信箱から放り込んでください。'}</p></div>`;
     document.getElementById('results').insertAdjacentHTML('beforeend', archive
-      ? '<p class="pad small muted">アクションを完了したカードです。開いて「一覧に戻す」か、完了を外すと元の一覧に戻ります。</p>'
+      ? '<p class="pad small muted">アーカイブしたカードと、アクションを完了したカードです。開いて「一覧に戻す」と元の一覧に戻ります。</p>'
       : elsewhere ? `<div class="actions"><button class="btn btn--small btn--plain" id="to-archive">アーカイブにも ${elsewhere}件</button></div>` : '');
     const toArchive = document.getElementById('to-archive');
     if (toArchive) toArchive.addEventListener('click', () => { state.kindFilter = 'archive'; state.shown = 100; renderAll(); });
@@ -570,7 +571,7 @@ async function renderTag(id) {
     ${rel.length ? `<section class="list-section"><h2 class="list-section__header">よく一緒に付くタグ</h2>
       <div class="tag-cloud">${rel.map(r => `<a class="chip-tag" href="#tag/${esc(r.tagId)}">#${esc(names.get(r.tagId) || '')} <small>${r.count}</small></a>`).join('')}</div></section>` : ''}
     <section class="list-section"><h2 class="list-section__header">このタグのカード</h2>
-      ${list.length ? `<ul class="list list--inset items">${list.map(c => cardRow(c, { names })).join('')}</ul>` : `<p class="pad muted">${archived ? '完了したカードだけです' : 'まだありません'}</p>`}
+      ${list.length ? `<ul class="list list--inset items">${list.map(c => cardRow(c, { names })).join('')}</ul>` : `<p class="pad muted">${archived ? 'アーカイブしたカードだけです' : 'まだありません'}</p>`}
       ${archived ? `<p class="list-section__footer"><button class="btn btn--small btn--plain" id="tag-archive">アーカイブにも ${archived}件</button></p>` : ''}
     </section>
     <div class="actions">
@@ -662,8 +663,7 @@ async function renderCard(id) {
           <div class="row"><input type="checkbox" id="a-done" ${a.done ? 'checked' : ''} aria-label="完了"><input id="a-text" class="row-left" placeholder="やること" value="${esc(a.text)}"></div>
           <div class="row"><label for="a-due">期限(任意)</label><input id="a-due" type="date" value="${esc(a.due || '')}"></div>
           ${a.done ? `<textarea class="field field--desc" id="a-note" placeholder="やってみてどうだった?(任意)" aria-label="完了メモ">${esc(a.doneNote || '')}</textarea>` : ''}
-          ${a.done ? `<p class="row small muted">${isArchived(card) ? `アーカイブにあります。受信箱・すべて・タグには出ません。${(a.doneNote || '').trim() ? '完了メモがあるので、近いカードには出ます。' : '完了メモを書くと、近いカードには出ます。'}` : 'アーカイブから出して、一覧に出しています。'}</p>` : ''}
-          <div class="row">${a.done ? `<button class="btn btn--small btn--plain" id="a-archive">${isArchived(card) ? '一覧に戻す' : 'アーカイブに入れる'}</button>` : ''}<button class="btn btn--small btn--plain danger" id="a-remove">アクションを外す</button></div>`
+          <div class="row"><button class="btn btn--small btn--plain danger" id="a-remove">アクションを外す</button></div>`
         : `<div class="row"><input id="a-new" class="row-left" placeholder="このカードから、やることを1つ"><button class="btn btn--small btn--tinted" id="a-add">追加</button></div>`}
       </div>
     </section>
@@ -673,7 +673,12 @@ async function renderCard(id) {
       <ul class="list list--inset items">${near.map(n => cardRow(n.card, { names })).join('')}</ul>
       <p class="list-section__footer">同じタグや、似た言葉を含むカードです。</p></section>` : ''}
 
+    ${isArchived(card) ? `<section class="list-section"><h2 class="list-section__header">アーカイブ${card.archivedAt ? ` ${esc(fmtDate(card.archivedAt))}` : ''}</h2>
+      ${a && a.done ? '' : `<div class="card"><textarea class="field field--desc" id="c-arch-note" placeholder="どう実現した?どうなった?(任意)" aria-label="実現メモ">${esc(card.archiveNote || '')}</textarea></div>`}
+      <p class="list-section__footer">受信箱・すべて・タグには出ません。${a && a.done ? '完了メモ' : '一言'}を書くと、近いカードには出ます。</p></section>` : ''}
+
     <div class="actions">
+      <button class="btn ${isArchived(card) ? 'btn--tinted' : 'btn--plain'}" id="c-archive">${isArchived(card) ? '一覧に戻す' : 'アーカイブする'}</button>
       ${card.inbox ? `<button class="btn btn--tinted" id="c-sorted">受信箱から出す</button>` : `<button class="btn btn--plain" id="c-inbox">受信箱に戻す</button>`}
       <button class="btn btn--plain danger" id="c-del">削除</button>
     </div>
@@ -740,12 +745,6 @@ async function renderCard(id) {
       if (e.target.checked) toast('完了しました。カードはアーカイブに入ります');
       renderCard(id);
     });
-    const arc = document.getElementById('a-archive');
-    if (arc) arc.addEventListener('click', async () => {
-      if (isArchived(card)) { card.archived = false; toast('一覧に戻しました'); } else { delete card.archived; toast('アーカイブに入れました'); }
-      await save(card);
-      renderCard(id);
-    });
     let t;
     document.getElementById('a-text').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => set({ text: e.target.value }), 500); });
     document.getElementById('a-due').addEventListener('change', e => set({ due: e.target.value || null }));
@@ -764,6 +763,15 @@ async function renderCard(id) {
     input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) add(); });
   }
 
+  document.getElementById('c-archive').addEventListener('click', async () => {
+    const on = !isArchived(card);
+    setArchived(card, on);
+    await save(card);
+    toast(on ? 'アーカイブしました。「すべて」の「アーカイブ」で見られます' : '一覧に戻しました');
+    renderCard(id);
+  });
+  const archNote = document.getElementById('c-arch-note');
+  if (archNote) autosave(card, { archiveNote: archNote });
   const sorted = document.getElementById('c-sorted');
   if (sorted) sorted.addEventListener('click', async () => { card.inbox = false; await save(card); toast('受信箱から出しました'); renderCard(id); });
   const back = document.getElementById('c-inbox');

@@ -1,7 +1,7 @@
 // npm test で実行。画面に触れない処理と、アイデアハブ(Code.gs)の動きを確かめる。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps, sortCards, linkIndex, isArchived, setDone, keepsNear } from '../js/core.js';
+import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps, sortCards, linkIndex, isArchived, setArchived, setDone, keepsNear } from '../js/core.js';
 import { splitOcr } from '../js/gemini.js';
 import { loadHub } from './gas-mock.mjs';
 
@@ -382,7 +382,7 @@ test('アーカイブ: 完了したカードが入り、一覧に戻した印は
   assert.equal(isArchived(c), false);
   setDone(c, false);
   assert.equal(c.action.doneAt, null);
-  assert.equal('archived' in c, false);
+  assert.equal('archived' in c, false); // 一覧に戻した印は、完了の付け外しで消える
   setDone(c, true);
   assert.equal(isArchived(c), true); // 付け直せばまたアーカイブへ
   // 前から完了していたカード(印なし)もアーカイブに入る
@@ -397,4 +397,22 @@ test('近いカード: アーカイブでも完了メモがあれば候補に残
   const target = { id: 't', kind: 'memo', title: '', body: '箱根の温泉に行きたい', quote: '', tags: [] };
   const near = nearCards([done('b', '箱根の温泉はよかった')].filter(keepsNear), target);
   assert.equal(near[0].card.id, 'b');
+});
+
+test('アーカイブ: アクションのないカードも自分で入れられ、完了を外してもそのまま', () => {
+  const c = newCard({ id: 'm', text: 'アイデア' });
+  setArchived(c, true, '2026-11-02T00:00:00Z');
+  assert.equal(isArchived(c), true);
+  assert.equal(c.archivedAt, '2026-11-02T00:00:00Z');
+  assert.equal(keepsNear(c), false);
+  c.archiveNote = 'ブログに書いた';
+  assert.equal(keepsNear(c), true); // 実現メモがあれば近いカードに残る
+  c.action = { text: 'x', done: true, doneAt: null, doneNote: '' };
+  setDone(c, false);
+  assert.equal(isArchived(c), true); // 自分でアーカイブしたものは、完了を外してもアーカイブのまま
+  setArchived(c, false);
+  assert.equal(isArchived(c), false);
+  assert.equal('archivedAt' in c, false);
+  const target = { id: 't', kind: 'memo', title: '', body: 'ブログに書く', quote: '', tags: [] };
+  assert.equal(nearCards([{ ...c, id: 'm2', body: 'x', archiveNote: 'ブログに書いた' }], target)[0].card.id, 'm2'); // 実現メモの言葉でも近さが出る
 });
