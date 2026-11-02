@@ -18,19 +18,27 @@ export const STRUCT_KINDS = ['tag', 'project', 'step', 'kinddef'];
 export const isInfo = c => !c.deleted && !STRUCT_KINDS.includes(c.kind);
 
 // ---------- アーカイブ ----------
-// アクションを完了したカードはアーカイブに入り、受信箱・すべて・タグ・近いカードに出なくなる。
-// 印は付けず「完了しているか」で決めるので、前から完了していたカードもそのまま入る。
-// アーカイブから出したカードだけ archived: false を持つ(完了を外す・付け直すと、この印は消える)
-export const isArchived = c => !!(c && c.action && c.action.done && c.archived !== false);
-// 完了の付け外し。付け直したらまたアーカイブに入るよう、archived の印は消す
-export function setDone(card, done, now = new Date().toISOString()) {
-  card.action = { ...card.action, done: !!done, doneAt: done ? now : null };
-  delete card.archived;
+// アーカイブしたカードは、受信箱・すべて・タグに出なくなる。入り方は2つ:
+//  - どのカードも「アーカイブする」で入れられる(archived: true, archivedAt)。メモやアイデアが実現したときなど
+//  - アクションを完了したカードは、印がなくても入る。前から完了していたカードもそのまま入る
+// 「一覧に戻す」と archived: false になり、完了していても一覧に出る
+export const isArchived = c => !!c && (c.archived === true || (!!(c.action && c.action.done) && c.archived !== false));
+export function setArchived(card, on, now = new Date().toISOString()) {
+  card.archived = !!on;
+  if (on) card.archivedAt = now; else delete card.archivedAt;
   return card;
 }
-// 近いカードの候補に残すか。アーカイブでも、完了メモ(やってみてどうだった?)を書いたものは
-// 経験として後の連想の種になるので残す
-export const keepsNear = c => !isArchived(c) || !!(c.action.doneNote || '').trim();
+// 完了の付け外し。一覧に戻していたカードも、また完了したらアーカイブに入るよう false の印は消す
+// (自分でアーカイブしたものは、完了を外してもアーカイブのまま)
+export function setDone(card, done, now = new Date().toISOString()) {
+  card.action = { ...card.action, done: !!done, doneAt: done ? now : null };
+  if (card.archived === false) delete card.archived;
+  return card;
+}
+// アーカイブのときに残す一言: 完了メモ(やってみてどうだった?)か、実現メモ(どう実現した?)
+export const archiveNote = c => [c.action && c.action.done ? c.action.doneNote : '', c.archiveNote].filter(x => (x || '').trim()).join('\n');
+// 近いカードの候補に残すか。アーカイブでも、一言を書いたものは経験として後の連想の種になるので残す
+export const keepsNear = c => !isArchived(c) || !!archiveNote(c).trim();
 
 // ---------- 種別(情報ソースの種類) ----------
 // 最初からある種別。fields はカードを作るときに出す欄: url=リンク、quote=引用、photo=写真
@@ -228,7 +236,7 @@ function jaccard(a, b) {
 // 返り値: [{ card, shared: [tagId], score }]
 export function nearCards(cards, target, { limit = 6 } = {}) {
   const tags = new Set(target.tags || []);
-  const text = c => [c.title, c.body, c.quote, c.action && c.action.doneNote].join(' ');
+  const text = c => [c.title, c.body, c.quote, c.action && c.action.doneNote, c.archiveNote].join(' ');
   const grams = bigrams(text(target));
   const out = [];
   for (const c of cards) {
