@@ -1,7 +1,7 @@
 // npm test で実行。画面に触れない処理と、アイデアハブ(Code.gs)の動きを確かめる。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps, sortCards, linkIndex } from '../js/core.js';
+import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps, sortCards, linkIndex, isArchived, setDone } from '../js/core.js';
 import { splitOcr } from '../js/gemini.js';
 import { loadHub } from './gas-mock.mjs';
 
@@ -368,4 +368,23 @@ test('種別アイコン: 既定・変更・不正な名前', async () => {
   assert.equal(list.find(k => k.key === 'kx').icon, 'dot');
   assert.ok(!kindIconSvg('"><script>').includes('<script>'));
   assert.ok(kindIconSvg('book').includes(KIND_ICONS.book[1]));
+});
+
+test('アーカイブ: 完了したカードが入り、一覧に戻した印は完了を付け直すと消える', () => {
+  const c = newCard({ id: 'a', text: 'メモ' });
+  assert.equal(isArchived(c), false); // アクションなし
+  c.action = { text: 'やる', due: null, done: false, doneAt: null, doneNote: '' };
+  assert.equal(isArchived(c), false);
+  setDone(c, true, '2026-11-02T00:00:00Z');
+  assert.equal(c.action.doneAt, '2026-11-02T00:00:00Z');
+  assert.equal(isArchived(c), true);
+  c.archived = false; // 一覧に戻す
+  assert.equal(isArchived(c), false);
+  setDone(c, false);
+  assert.equal(c.action.doneAt, null);
+  assert.equal('archived' in c, false);
+  setDone(c, true);
+  assert.equal(isArchived(c), true); // 付け直せばまたアーカイブへ
+  // 前から完了していたカード(印なし)もアーカイブに入る
+  assert.equal(isArchived({ action: { done: true } }), true);
 });
