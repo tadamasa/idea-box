@@ -16,7 +16,7 @@
   --clip-color: #8E8E93;
   --kraft: #F3E6C8; --kraft-ink: #6B5420; --kraft-warn: #FBD9C4; --kraft-warn-ink: #A2400F;
   --pop: #FFD84D; --pop-ink: #3A2A00; --pop-edge: #D9A400;
-  --pop-2: #FF7A45; --pop-2-edge: #C9501F;
+  --pop-2: #FF7A45; --pop-2-ink: #3A1400; --pop-2-edge: #C9501F;
   --hanko: #D7443E;
   --cal-band: #8E8A80; --cal-warn: #E8743B;
 }
@@ -125,7 +125,7 @@
 .btn, .kind, .pill-select { border-radius: 14px; transition: transform 0.12s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.12s; }
 .kind, .pill-select { background-color: var(--paper); border: 1px solid var(--paper-edge); box-shadow: 0 2px 0 var(--paper-edge); }
 .btn--tinted, .kind.is-active, .pill-select.is-set { background: var(--pop); color: var(--pop-ink); box-shadow: 0 3px 0 var(--pop-edge); font-weight: 700; border-color: transparent; }
-.btn--prominent { background: var(--pop-2); color: #fff; box-shadow: 0 3px 0 var(--pop-2-edge); font-weight: 700; }
+.btn--prominent { background: var(--pop-2); color: var(--pop-2-ink); box-shadow: 0 3px 0 var(--pop-2-edge); font-weight: 700; }
 .btn--tinted:active, .btn--prominent:active, .kind:active { transform: translateY(3px); box-shadow: 0 0 0 transparent; opacity: 1; }
 .kind--edit { box-shadow: none; border: none; }
 .chip-tag:not(.chip-pick):not(.chip-new) { background: var(--paper); color: var(--color-label-secondary); box-shadow: inset 0 0 0 1px var(--color-separator); }
