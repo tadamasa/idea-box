@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, BASE_KINDS, KIND_FIELDS, KIND_ICONS, kindIconSvg, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, isArchived, setArchived, setDone, archiveNote, keepsNear, projectSteps, nextOrder, newStep, newProject, stepProgress, textParts, shortUrl } from './core.js';
+import { KINDS, BASE_KINDS, KIND_FIELDS, KIND_ICONS, kindIconSvg, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, isArchived, setArchived, setDone, archiveNote, keepsNear, projectSteps, nextOrder, newStep, newProject, stepProgress, textParts, shortUrl, shapeOf, siteOf } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -230,6 +230,22 @@ const kinds = () => (kindCache ||= kindList(state.cards.filter(c => c.kind === '
 const kindOf = key => kinds().find(k => k.key === key);
 const kindName = key => (kindOf(key) || {}).title || KINDS[key] || 'メモ';
 const kindIcon = (key, size) => kindIconSvg((kindOf(key) || {}).icon, size);
+// カードの形(種別のアイコンで決まる)。Webの形は開けるURLがあるときだけ
+function cardShape(card) {
+  const shape = shapeOf((kindOf(card.kind) || {}).icon);
+  return shape === 'window' && !siteOf(card.url) ? 'paper' : shape;
+}
+// ブラウザ風のタブ。頭文字とドメインだけで作り、外からアイコンは取らない
+function chromeHtml(site) {
+  return `<span class="chrome" aria-hidden="true"><span class="chrome__tab"><span class="chrome__fav" style="--fh:${site.hue}">${esc(site.initial)}</span><span class="chrome__host">${esc(site.host)}</span><span class="chrome__x">×</span></span><span class="chrome__plus">+</span></span>`;
+}
+const addrHtml = site => `<span class="addr"><span class="addr__lock" aria-hidden="true">🔒</span><b>${esc(site.host)}</b>${esc(site.path)}</span>`;
+// 日めくり。期限切れは橙で少し傾く
+function calHtml(due, overdue) {
+  const [y, m, d] = due.split('-').map(Number);
+  const yr = String(y) === today().slice(0, 4) ? '' : `${y}/`;
+  return `<span class="cal${overdue ? ' cal--warn' : ''}" aria-hidden="true"><span class="cal__m">${yr}${m}月</span><span class="cal__d">${d}</span></span>`;
+}
 const hasField = (key, f) => ((kindOf(key) || {}).fields || []).includes(f);
 const links = () => (linkCache ||= linkIndex(state.cards));
 const slots = () => (slotCache ||= { t: tagSlots(state.cards.filter(c => c.kind === 'tag')), p: projectSlots(state.cards.filter(c => c.kind === 'project')) });
@@ -305,8 +321,10 @@ function cardRow(card, { names = tagNames(), inboxButton = false, filterable = f
   const action = card.archived === true && !(card.action && card.action.done) ? `<span class="badge">アーカイブ${card.archivedAt ? ` ${esc(shortDue(card.archivedAt.slice(0, 10)))}` : ''}</span>`
     : !card.action ? ''
     : card.action.done ? `<span class="badge">完了${card.action.doneAt ? ` ${esc(shortDue(card.action.doneAt.slice(0, 10)))}` : ''}</span>`
-    : `<span class="badge${isOverdue(card.action, today()) ? ' badge--warn' : ''}">アクション${card.action.due ? ` ${esc(shortDue(card.action.due))}` : ''}</span>`;
-  const head = `<span class="item__head"><span class="item__text">
+    : `<span class="badge badge--tag${isOverdue(card.action, today()) ? ' badge--warn' : ''}">やる${card.action.due ? ` ${esc(shortDue(card.action.due))}` : ''}</span>`;
+  const shape = cardShape(card);
+  const site = shape === 'window' ? siteOf(card.url) : null;
+  const head = `<span class="item__head"><span class="item__text">${site ? addrHtml(site) : ''}
       <span class="item__kind kind-${esc(card.kind)}">${kindIcon(card.kind)}${esc(kindName(card.kind))}</span>
       <span class="item__title">${projectDot(card)}${esc(displayTitle(card))}</span>
       ${snippet.trim() ? `<span class="item__snippet">${esc(snippet.trim().slice(0, 140))}</span>` : ''}</span>${asideHtml(card)}</span>`;
@@ -314,14 +332,14 @@ function cardRow(card, { names = tagNames(), inboxButton = false, filterable = f
     const projs = [...(links().get(card.id) || [])].map(byId).filter(p => p && !p.deleted && p.kind === 'project');
     const tagBtns = (card.tags || []).filter(t => names.get(t)).map(t => `<button class="chip-tag" data-ftag="${esc(t)}" aria-label="#${esc(names.get(t))} で絞る">#${esc(names.get(t))}</button>`).join('');
     const projBtns = projs.map(p => `<button class="chip-tag chip-project" data-fproj="${esc(p.id)}" aria-label="${esc(p.title)} で絞る">${colorDot(p)}${esc(p.title)}</button>`).join('');
-    return `<li class="item" data-id="${esc(card.id)}" data-kind="${esc(card.kind)}">
+    return `<li class="item" data-id="${esc(card.id)}" data-kind="${esc(card.kind)}" data-shape="${shape}">${site ? chromeHtml(site) : ''}
     <div class="item__body">
       <a class="item__main item__main--top" href="#card/${esc(card.id)}">${head}</a>
       <div class="item__meta item__meta--below">${esc(fmtDate(card.createdAt))}${action}${tagBtns || projBtns ? `<span class="chips">${projBtns}${tagBtns}</span>` : ''}</div>
     </div>
   </li>`;
   }
-  return `<li class="item" data-id="${esc(card.id)}" data-kind="${esc(card.kind)}">
+  return `<li class="item" data-id="${esc(card.id)}" data-kind="${esc(card.kind)}" data-shape="${shape}">${site ? chromeHtml(site) : ''}
     <a class="item__main" href="#card/${esc(card.id)}">
       ${head}
       <span class="item__meta">${esc(fmtDate(card.createdAt))}${action}${tagChips(card, names)}</span>
@@ -870,13 +888,13 @@ async function renderCardView(card) {
     </article>
 
     ${a ? `<section class="list-section"><h2 class="list-section__header">アクション</h2>
-      <ul class="list list--inset items"><li class="item item--action">
+      <ul class="list list--inset items"><li class="item item--action" data-shape="ticket">
         <input type="checkbox" class="item__check" id="v-done" ${a.done ? 'checked' : ''} aria-label="${esc(a.text || 'アクション')} を完了">
         <div class="item__main">
           <span class="item__title${a.done ? ' is-done' : ''}">${esc(a.text || '(未記入)')}</span>
-          ${a.due || a.done ? `<span class="item__meta">${a.done ? `<span class="badge">完了${a.doneAt ? ` ${esc(shortDue(a.doneAt.slice(0, 10)))}` : ''}</span>` : `<span class="badge${isOverdue(a, today()) ? ' badge--warn' : ''}">期限 ${esc(shortDue(a.due))}</span>`}</span>` : ''}
+          ${a.due || a.done ? `<span class="item__meta">${a.done ? `<span class="badge">完了${a.doneAt ? ` ${esc(shortDue(a.doneAt.slice(0, 10)))}` : ''}</span>` : `<span class="sr-only">期限 ${esc(shortDue(a.due))}</span>`}</span>` : ''}
           ${a.done && (a.doneNote || '').trim() ? `<span class="view__note">${richText(a.doneNote.trim())}</span>` : ''}
-        </div>
+        </div>${a.due && !a.done ? calHtml(a.due, isOverdue(a, today())) : ''}
       </li></ul></section>` : ''}
 
     ${note ? `<section class="list-section"><h2 class="list-section__header">実現メモ</h2>
@@ -924,7 +942,7 @@ async function renderProjects() {
   const row = p => {
     const pr = stepProgress(projectSteps(state.cards, p.id));
     const n = linkedInfoCount(state.cards, p.id, links());
-    return `<li class="item"><a class="item__main" href="#project/${esc(p.id)}">
+    return `<li class="item" data-shape="folder"${p.color ? ` style="--pc:${colorVar(p.color)}"` : ''}><a class="item__main" href="#project/${esc(p.id)}">
       <span class="item__title">${colorDot(p)}${esc(p.title || '(無題)')}</span>
       ${p.goal ? `<span class="item__snippet">${esc(p.goal)}</span>` : ''}
       <span class="item__meta">${p.due ? `<span class="badge">${esc(p.due)}</span>` : ''}${pr.all ? `<span>手順 ${pr.done}/${pr.all}</span>` : ''}${n ? `<span>カード ${n}</span>` : ''}${p.status === 'closed' ? `<span>閉じた ${esc(fmtDate(p.closedAt))}</span>` : ''}</span>
@@ -1134,13 +1152,14 @@ async function renderProjectView(p) {
   const stepRow = st => {
     const subs = linked(st.id, c => c.kind === 'project' && c.id !== id);
     const sn = (st.body || '').trim();
-    return `<li class="item item--action item--step" data-id="${esc(st.id)}">
+    const cal = st.action.due && !st.action.done;
+    return `<li class="item item--action item--step" data-id="${esc(st.id)}" data-shape="ticket"${p.color ? ` style="--pc:${colorVar(p.color)}"` : ''}>
       <input type="checkbox" class="item__check" ${st.action.done ? 'checked' : ''} aria-label="${esc(st.title)} を完了">
       <a class="item__main" href="#card/${esc(st.id)}">
         <span class="item__title${st.action.done ? ' is-done' : ''}">${esc(st.title || '(未記入)')}</span>
         ${sn ? `<span class="item__snippet">${esc(sn.slice(0, 140))}</span>` : ''}
-        ${st.action.due || subs.length ? `<span class="item__meta">${st.action.due ? `<span class="badge${!st.action.done && isOverdue(st.action, t) ? ' badge--warn' : ''}">${esc(shortDue(st.action.due))}</span>` : ''}${subs.map(s => `<span class="kind-project">→ ${esc(s.title)}</span>`).join('')}</span>` : ''}
-      </a>
+        ${st.action.due || subs.length ? `<span class="item__meta">${st.action.due ? (cal ? `<span class="sr-only">期日 ${esc(shortDue(st.action.due))}</span>` : `<span class="badge">${esc(shortDue(st.action.due))}</span>`) : ''}${subs.map(s => `<span class="kind-project">→ ${esc(s.title)}</span>`).join('')}</span>` : ''}
+      </a>${cal ? calHtml(st.action.due, isOverdue(st.action, t)) : ''}
     </li>`;
   };
   const facts = [
@@ -1279,10 +1298,12 @@ async function renderActions() {
     const projs = projectsOf(c);
     const projBtns = projs.map(p => `<button class="chip-tag chip-project" data-fproj="${esc(p.id)}" aria-label="${esc(p.title)} で絞る">${colorDot(p)}${esc(p.title)}</button>`).join('');
     const tagBtns = (c.tags || []).filter(x => names.get(x)).map(x => `<button class="chip-tag" data-ftag="${esc(x)}" aria-label="#${esc(names.get(x))} で絞る">#${esc(names.get(x))}</button>`).join('');
-    const due = c.action.due ? `<span class="badge${isOverdue(c.action, t) ? ' badge--warn' : ''}">${esc(shortDue(c.action.due))}</span>` : '';
+    // 期日は右の日めくりで見せ、読み上げ用の文字は見出しに添える
+    const due = c.action.due && !c.action.done ? `<span class="sr-only">期日 ${esc(shortDue(c.action.due))}${isOverdue(c.action, t) ? '(過ぎています)' : ''}</span>` : '';
+    const pc = projs.find(p => p.color);
     // 単発のアクションは元のカードの見出しを添える(手順はプロジェクトの札で分かる)
     const src = c.kind === 'step' ? '' : displayTitle(c);
-    return `<li class="item item--action" data-id="${esc(c.id)}">
+    return `<li class="item item--action" data-id="${esc(c.id)}" data-shape="ticket"${pc ? ` style="--pc:${colorVar(pc.color)}"` : ''}>
     <input type="checkbox" class="item__check" ${c.action.done ? 'checked' : ''} aria-label="${esc(c.action.text)} を完了">
     <div class="item__body">
       <a class="item__main item__main--top" href="#card/${esc(c.id)}">
@@ -1290,7 +1311,7 @@ async function renderActions() {
         ${src && src !== c.action.text ? `<span class="item__snippet">${esc(src)}</span>` : ''}
       </a>
       ${due || projBtns || tagBtns ? `<div class="item__meta item__meta--below">${due}<span class="chips">${projBtns}${tagBtns}</span></div>` : '<div class="item__gap"></div>'}
-    </div></li>`;
+    </div>${c.action.due && !c.action.done ? calHtml(c.action.due, isOverdue(c.action, t)) : ''}</li>`;
   };
   const sel = (id, cls, label, opts, cur) => `<select id="${id}" class="pill-select${cur && cls ? ' is-set' : ''}" aria-label="${label}">${opts}</select>`;
   $view.innerHTML = all.length ? `

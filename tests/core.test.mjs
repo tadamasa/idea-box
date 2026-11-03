@@ -1,7 +1,7 @@
 // npm test で実行。画面に触れない処理と、アイデアハブ(Code.gs)の動きを確かめる。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps, sortCards, linkIndex, isArchived, setArchived, setDone, keepsNear, textParts, shortUrl } from '../js/core.js';
+import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps, sortCards, linkIndex, isArchived, setArchived, setDone, keepsNear, textParts, shortUrl, shapeOf, siteOf } from '../js/core.js';
 import { splitOcr } from '../js/gemini.js';
 import { loadHub } from './gas-mock.mjs';
 
@@ -431,4 +431,24 @@ test('閲覧表示: URLを短く見せる', () => {
   assert.equal(shortUrl('https://www.example.com/'), 'example.com');
   assert.equal(shortUrl('https://example.com/a/b'), 'example.com/a/b');
   assert.equal(shortUrl('https://example.com/' + 'x'.repeat(80), 20).length, 20);
+});
+
+test('カードの形は種別のアイコンで決まる', () => {
+  assert.equal(shapeOf('pencil'), 'clip');
+  assert.equal(shapeOf('bulb'), 'sticky');
+  assert.equal(shapeOf('link'), 'window');
+  assert.equal(shapeOf('heart'), 'paper');
+  assert.equal(shapeOf('constructor'), 'paper');
+});
+
+test('サイトの名前・頭文字・色はURLから決まる', () => {
+  const a = siteOf('https://ja.wikipedia.org/wiki/%E7%B4%99');
+  assert.equal(a.host, 'ja.wikipedia.org');
+  assert.equal(a.initial, 'W');
+  assert.equal(a.path, '/wiki/紙');
+  assert.equal(siteOf('https://en.wikipedia.org/').hue, a.hue);
+  assert.equal(siteOf('https://www.example.com/').host, 'example.com');
+  assert.ok(a.hue >= 0 && a.hue < 360);
+  assert.equal(siteOf('javascript:alert(1)'), null);
+  assert.equal(siteOf(''), null);
 });
