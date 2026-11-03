@@ -261,3 +261,27 @@ button.chip-tag { min-height: 24px; padding: 1px 8px; font-size: 12px; line-heig
 .icon-pick[hidden] { display: none; }
 .icon-pick__btn { display: inline-flex; align-items: center; justify-content: center; height: 40px; border-radius: 10px; color: var(--color-label-secondary); }
 .icon-pick__btn.is-on { background-color: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent); }
+
+/* 閲覧表示(すべて・プロジェクトから開くカードとプロジェクト) */
+#nav-edit { font-weight: 600; }
+.view { padding: var(--space-4); }
+.view > * + * { margin-top: var(--space-3); }
+.view__kind { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--space-2); margin: 0; font-size: 13px; line-height: 18px; color: var(--color-label-secondary); }
+.view__title { margin: var(--space-2) 0 0; font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: 0.35px; word-break: break-word; }
+.view__body { font-size: 17px; line-height: 27px; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+.view__body--sm { font-size: 15px; line-height: 23px; margin: 0; }
+.view__goal { font-size: 17px; line-height: 26px; font-weight: 600; white-space: pre-wrap; word-break: break-word; margin-top: 2px; }
+.view__label { margin: var(--space-4) 0 0; font-size: 12px; line-height: 16px; color: var(--color-label-tertiary); letter-spacing: 0.4px; }
+.view__label + * { margin-top: 2px; }
+.view__quote { margin-left: 0; margin-right: 0; padding: var(--space-1) 0 var(--space-1) var(--space-3); border-left: 3px solid var(--color-separator-opaque); font-size: 16px; line-height: 26px; color: var(--color-label-secondary); white-space: pre-wrap; word-break: break-word; font-feature-settings: "palt"; }
+.view a:not(.chip-tag) { color: var(--color-accent); text-decoration: none; overflow-wrap: anywhere; }
+.view__link { display: inline-flex; align-items: center; gap: 6px; min-height: var(--hit); font-size: 15px; }
+.view__link span { overflow-wrap: anywhere; }
+svg.ic.ic--sm { width: 18px; height: 18px; flex: none; }
+.view__chips { display: flex; padding-top: var(--space-2); border-top: var(--hairline) solid var(--color-separator); margin-top: var(--space-4); }
+.view__chips a.chip-tag { min-height: 28px; }
+.card > .view__chips:only-child { border-top: none; margin-top: 0; padding: var(--space-1) 0; }
+.view__note { font-size: 14px; line-height: 20px; color: var(--color-label-secondary); white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
+.view__progress { height: 4px; border-radius: 2px; background-color: var(--bg-fill-tertiary); overflow: hidden; margin-top: var(--space-4); }
+.view__progress span { display: block; height: 100%; background-color: var(--color-label-tertiary); border-radius: 2px; }
+.view .pdot { vertical-align: 0.1em; }
