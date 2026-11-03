@@ -96,7 +96,9 @@ function openEdit(viewHash) {
   location.hash = `${viewHash}/edit`;
 }
 // 編集を終えて閲覧表示へ。閲覧表示から来たなら履歴を戻り、直接開いたなら置き換える(戻るで編集に戻らないように)
-function leaveEdit(viewHash) {
+async function leaveEdit(viewHash) {
+  // 書いてすぐ「完了」を押しても、書いた内容が表示に出るよう先に保存する
+  await flushSaves();
   if (state.editFrom === viewHash && history.length > 1) { state.editFrom = ''; history.back(); }
   else location.replace(viewHash);
 }
@@ -629,17 +631,29 @@ async function renderTag(id) {
 
 // ---------- カード ----------
 // 欄ごとに別のタイマーを持つ。500ms以内に別の欄へ移っても、前の欄の書きかけを落とさない
+// 待っている書きかけ。「完了」で表示に戻る前に、ここにあるものを先に保存する
+const pendingSaves = new Map();
+async function flushSaves() {
+  const list = [...pendingSaves.values()];
+  pendingSaves.clear();
+  for (const run of list) await run();
+}
 function autosave(card, fields, after) {
   const timers = {};
   for (const [key, el] of Object.entries(fields)) {
     el.addEventListener('input', () => {
       clearTimeout(timers[key]);
-      timers[key] = setTimeout(async () => {
+      const pk = `${card.id}:${key}`;
+      const run = async () => {
+        clearTimeout(timers[key]);
+        pendingSaves.delete(pk);
         card[key] = el.value;
         if (key === 'url' || key === 'body') card.kind = card.kind === 'memo' || card.kind === 'url' || card.kind === 'video' ? newCard({ id: card.id, text: card.body, url: card.url }).kind : card.kind;
         await save(card);
         if (after) after();
-      }, 500);
+      };
+      pendingSaves.set(pk, run);
+      timers[key] = setTimeout(run, 500);
     });
   }
 }
@@ -1007,7 +1021,8 @@ async function renderProject(id, { suggestions = null, edit = false } = {}) {
     </section>`;
 
   autosave(p, { title: document.getElementById('p-title'), goal: document.getElementById('p-goal'), body: document.getElementById('p-body'), closeNote: document.getElementById('p-close-note') },
-    () => { setTitle(p.title || 'プロジェクト', { back: true }); setNavAction('完了', () => leaveEdit(`#project/${id}`)); });
+    // 編集画面にいるときだけ見出しを直す(表示に戻った後に遅れて呼ばれても、「編集」ボタンを消さない)
+    () => { if (location.hash !== `#project/${id}/edit`) return; setTitle(p.title || 'プロジェクト', { back: true }); setNavAction('完了', () => leaveEdit(`#project/${id}`)); });
   document.getElementById('p-due').addEventListener('change', async e => { p.due = e.target.value || null; await save(p); });
   $view.querySelectorAll('.swatch').forEach(b => b.addEventListener('click', async () => {
     p.color = b.dataset.color || null;
