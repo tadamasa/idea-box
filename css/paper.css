@@ -8,15 +8,15 @@
   --paper-margin: rgb(220 80 80 / 0.25);
   --paper-shadow: 0 1px 1px rgb(0 0 0 / 0.06), 0 4px 10px -4px rgb(0 0 0 / 0.12);
   --paper-edge: rgb(0 0 0 / 0.08);
-  --sticky-1: #FFF59A; --sticky-2: #FFEB70; --sticky-fold: #E8D04F; --sticky-glue: rgb(0 0 0 / 0.045);
+  --sticky-1: #FFFBDA; --sticky-2: #FFF5C4; --sticky-fold: #EDE0A0; --sticky-glue: rgb(0 0 0 / 0.03);
   --letter: #FFFDF7; --letter-edge: #EDE3CC; --letter-mark: rgb(190 150 80 / 0.28);
   --film-band: #DCDAD4;
   --tape: rgb(214 196 150 / 0.75);
   --chrome: #E4E1DA; --chrome-tab: #FFFFFF; --chrome-addr: #F2F1EE;
   --clip-color: #8E8E93;
   --kraft: #F3E6C8; --kraft-ink: #6B5420; --kraft-warn: #FBD9C4; --kraft-warn-ink: #A2400F;
-  --pop: #FFD84D; --pop-ink: #3A2A00; --pop-edge: #D9A400;
-  --pop-2: #FF7A45; --pop-2-ink: #3A1400; --pop-2-edge: #C9501F;
+  --pop: #FFEDB0; --pop-ink: #4A3800; --pop-edge: #E5CB7A;
+  --pop-2: #FFD3BD; --pop-2-ink: #5A2208; --pop-2-edge: #E9A988;
   --hanko: #D7443E;
   --cal-band: #8E8A80; --cal-warn: #E8743B;
 }
@@ -29,7 +29,9 @@
     --paper-margin: rgb(240 120 120 / 0.25);
     --paper-shadow: 0 0 0 1px rgb(255 255 255 / 0.06);
     --paper-edge: rgb(255 255 255 / 0.08);
-    --sticky-1: #5A5222; --sticky-2: #4E471C; --sticky-fold: #6E6428; --sticky-glue: rgb(255 255 255 / 0.04);
+    --sticky-1: #403B22; --sticky-2: #39351E; --sticky-fold: #554E2C; --sticky-glue: rgb(255 255 255 / 0.03);
+    --pop: #4D4220; --pop-ink: #FFE9A6; --pop-edge: #2E2712;
+    --pop-2: #50301F; --pop-2-ink: #FFD3BD; --pop-2-edge: #301B10;
     --letter: #2B2822; --letter-edge: #4A4335; --letter-mark: rgb(210 170 100 / 0.25);
     --film-band: #3A3936;
     --tape: rgb(150 135 100 / 0.6);
@@ -67,7 +69,7 @@
 /* アイデア(電球の種別): 付箋。少し傾き、上にのり跡、右下の角がめくれる */
 .items > .item[data-shape="sticky"] { border-radius: 2px; transform: rotate(-0.8deg); box-shadow: none;
   background: linear-gradient(var(--sticky-glue) 0 18px, transparent 18px), linear-gradient(135deg, var(--sticky-1), var(--sticky-2));
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%); filter: drop-shadow(0 3px 4px rgb(120 90 0 / 0.22)); }
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%); filter: drop-shadow(0 2px 3px rgb(120 90 0 / 0.14)); }
 .items > .item[data-shape="sticky"]:nth-child(even) { transform: rotate(0.7deg); }
 .items > .item[data-shape="sticky"]::after { content: ""; display: block; position: absolute; left: auto; right: 0; bottom: 0; width: 18px; height: 18px; background: linear-gradient(315deg, transparent 50%, var(--sticky-fold) 50%); }
 .items > .item[data-shape="sticky"] .item__title { font-size: 17px; }
@@ -96,6 +98,11 @@
   background: linear-gradient(color-mix(in srgb, var(--pc) 16%, var(--paper)), color-mix(in srgb, var(--pc) 9%, var(--paper))); border-top: 3px solid color-mix(in srgb, var(--pc) 55%, var(--paper)); }
 .items > .item[data-shape="folder"]::before { content: ""; position: absolute; left: 0; top: -15px; width: 42%; height: 14px; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--pc) 55%, var(--paper)); clip-path: polygon(0 100%, 0 30%, 4% 0, 88% 0, 100% 100%); }
 .items > .item[data-shape="folder"] .pdot { display: none; }
+/* プロジェクトの詳細も同じフォルダ(上の閲覧カード) */
+.card.view--folder { --pc: var(--sys-gray); position: relative; margin-top: 22px; border-radius: 0 14px 14px 14px;
+  background: linear-gradient(color-mix(in srgb, var(--pc) 16%, var(--paper)), color-mix(in srgb, var(--pc) 9%, var(--paper))); border-top: 3px solid color-mix(in srgb, var(--pc) 55%, var(--paper)); box-shadow: var(--paper-shadow); }
+.card.view--folder::before { content: ""; position: absolute; left: 0; top: -17px; width: 42%; height: 16px; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--pc) 55%, var(--paper)); clip-path: polygon(0 100%, 0 30%, 4% 0, 88% 0, 100% 100%); }
+.card.view--folder .view__kind .pdot { display: none; }
 
 /* ---------- アクション: 荷札 + 日めくり + 「済」のはんこ ---------- */
 .items > .item[data-shape="ticket"] { --pc: #C7C2B8; min-height: 62px; border-radius: 4px 10px 10px 4px; align-items: center; padding-left: 14px; box-shadow: none;

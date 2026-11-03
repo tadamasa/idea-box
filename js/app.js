@@ -1169,7 +1169,7 @@ async function renderProjectView(p) {
     closed ? `<span class="badge">閉じた${p.closedAt ? ` ${esc(fmtDate(p.closedAt))}` : ''}</span>` : '',
   ].filter(Boolean).join('');
   $view.innerHTML = `
-    <article class="card view">
+    <article class="card view view--folder"${p.color ? ` style="--pc:${colorVar(p.color)}"` : ''}>
       <p class="view__kind">${colorDot(p)}<span>プロジェクト</span>${facts}</p>
       ${goal ? `<p class="view__label">ゴール</p><div class="view__goal">${richText(goal)}</div>` : ''}
       ${memo ? `<p class="view__label">メモ</p><div class="view__body view__body--sm">${richText(memo)}</div>` : ''}
