@@ -71,6 +71,23 @@ const iconName = n => (Object.hasOwn(KIND_ICONS, n) ? n : '');
 // アイコンのSVG。中身は上の固定の表からだけ作るので、そのまま innerHTML に入れてよい
 export const kindIconSvg = (name, size = 14) => `<svg class="ki" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false"><path d="${KIND_ICONS[iconName(name) || DEFAULT_KIND_ICON][1]}"/></svg>`;
 
+// カードの形。種別のアイコンで決めるので、自分で足した種別も同じアイコンなら同じ形になる
+// clip=クリップ留めの罫線紙 window=ブラウザ film=フィルム letter=便箋 polaroid=ポラロイド stack=紙の束 sticky=付箋 paper=ふつうの紙
+export const ICON_SHAPES = { pencil: 'clip', link: 'window', globe: 'window', play: 'film', quote: 'letter', camera: 'polaroid', layers: 'stack', bulb: 'sticky' };
+export const shapeOf = icon => (Object.hasOwn(ICON_SHAPES, icon) ? ICON_SHAPES[icon] : 'paper');
+// ブラウザ風のタブに出すサイトの名前と頭文字、色(0〜359の色相)。同じサイトはいつも同じ色。外からアイコンは取らない
+export function siteOf(url) {
+  let u;
+  try { u = new URL(String(url || '')); } catch { return null; }
+  if (!/^https?:$/.test(u.protocol)) return null;
+  const host = u.hostname.replace(/^www\./i, '');
+  const core = host.replace(/^(m|mobile|ja|en|jp)\./i, '');
+  let path = u.pathname === '/' ? '' : u.pathname;
+  try { path = decodeURI(path); } catch { /* そのまま */ }
+  const hue = [...core].reduce((h, c) => (h * 31 + c.codePointAt(0)) % 360, 7);
+  return { host, path, initial: (core.match(/[a-z0-9]/i) || ['?'])[0].toUpperCase(), hue };
+}
+
 export const BASE_KINDS = [
   { key: 'memo', title: 'メモ', fields: [], icon: 'pencil' },
   { key: 'url', title: 'Web', fields: ['url'], icon: 'link' },

@@ -1,0 +1,140 @@
+/* 文房具の見た目: カードは種別ごとに紙や道具の形(cardRow が data-shape を付ける)、ボタンは厚みがあり押すと沈む。
+   色を付けるのは付箋・フォルダ(プロジェクトの色)・荷札だけにして、ほかは紙の白と線で見分ける */
+:root {
+  --bg-grouped: #F3F1EC;
+  --paper: #FFFFFF;
+  --bg-grouped-secondary: var(--paper);
+  --paper-rule: rgb(80 120 200 / 0.09);
+  --paper-margin: rgb(220 80 80 / 0.25);
+  --paper-shadow: 0 1px 1px rgb(0 0 0 / 0.06), 0 4px 10px -4px rgb(0 0 0 / 0.12);
+  --paper-edge: rgb(0 0 0 / 0.08);
+  --sticky-1: #FFF59A; --sticky-2: #FFEB70; --sticky-fold: #E8D04F; --sticky-glue: rgb(0 0 0 / 0.045);
+  --letter: #FFFDF7; --letter-edge: #EDE3CC; --letter-mark: rgb(190 150 80 / 0.28);
+  --film-band: #DCDAD4;
+  --tape: rgb(214 196 150 / 0.75);
+  --chrome: #E4E1DA; --chrome-tab: #FFFFFF; --chrome-addr: #F2F1EE;
+  --clip-color: #8E8E93;
+  --kraft: #F3E6C8; --kraft-ink: #6B5420; --kraft-warn: #FBD9C4; --kraft-warn-ink: #A2400F;
+  --pop: #FFD84D; --pop-ink: #3A2A00; --pop-edge: #D9A400;
+  --pop-2: #FF7A45; --pop-2-ink: #3A1400; --pop-2-edge: #C9501F;
+  --hanko: #D7443E;
+  --cal-band: #8E8A80; --cal-warn: #E8743B;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-grouped: #141311;
+    --paper: #262523;
+    --bg-grouped-secondary: var(--paper);
+    --paper-rule: rgb(255 255 255 / 0.05);
+    --paper-margin: rgb(240 120 120 / 0.25);
+    --paper-shadow: 0 0 0 1px rgb(255 255 255 / 0.06);
+    --paper-edge: rgb(255 255 255 / 0.08);
+    --sticky-1: #5A5222; --sticky-2: #4E471C; --sticky-fold: #6E6428; --sticky-glue: rgb(255 255 255 / 0.04);
+    --letter: #2B2822; --letter-edge: #4A4335; --letter-mark: rgb(210 170 100 / 0.25);
+    --film-band: #3A3936;
+    --tape: rgb(150 135 100 / 0.6);
+    --chrome: #34322F; --chrome-tab: #262523; --chrome-addr: #1E1D1B;
+    --clip-color: #A1A1A6;
+    --kraft: #4A3F26; --kraft-ink: #EBD9A9; --kraft-warn: #5A3220; --kraft-warn-ink: #FFB48A;
+    --cal-band: #6E6A60;
+  }
+}
+
+/* ---------- カード共通 ---------- */
+.list--inset.items { gap: 14px; padding-top: 6px; }
+.list--inset.items > .item { overflow: visible; border-radius: 6px; background-color: var(--paper); box-shadow: var(--paper-shadow); }
+@media (prefers-color-scheme: dark) { .list--inset.items > .item { border: none; } }
+
+/* メモ: 罫線の紙 + ゼムクリップ */
+.items > .item[data-shape="clip"] { background: repeating-linear-gradient(transparent 0 20px, var(--paper-rule) 20px 21px), var(--paper); border-left: 3px double var(--paper-margin); }
+.items > .item[data-shape="clip"]::before { content: ""; position: absolute; top: -12px; left: 46%; width: 14px; height: 36px; z-index: 2; background-color: var(--clip-color); transform: rotate(8deg); pointer-events: none;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 36'%3E%3Cpath d='M4 10V27a3 3 0 0 0 6 0V6a4.5 4.5 0 0 0-9 0v23a6 6 0 0 0 12 0V10' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 36'%3E%3Cpath d='M4 10V27a3 3 0 0 0 6 0V6a4.5 4.5 0 0 0-9 0v23a6 6 0 0 0 12 0V10' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat center / contain; }
+
+/* Web: ブラウザ。上の帯にタブ(サイトの頭文字 + ドメイン)、本文の頭にアドレス欄 */
+.items > .item[data-shape="window"] { border-radius: 10px; padding-top: 30px; background: linear-gradient(var(--chrome) 0 30px, var(--paper) 30px); }
+.chrome { position: absolute; inset: 0 0 auto 0; height: 30px; display: flex; align-items: flex-end; padding-left: 8px; pointer-events: none; }
+.chrome__tab { display: inline-flex; align-items: center; gap: 6px; max-width: 70%; height: 25px; padding: 0 12px 0 8px; box-sizing: border-box; background: var(--chrome-tab); border-radius: 9px 9px 0 0; font-size: 12px; font-weight: 600; color: var(--color-label-secondary); white-space: nowrap; overflow: hidden; }
+.chrome__host { overflow: hidden; text-overflow: ellipsis; }
+.chrome__x { margin-left: 6px; color: var(--color-label-tertiary); font-weight: 400; }
+.chrome__plus { margin: 0 0 4px 10px; color: var(--color-label-tertiary); font-size: 15px; }
+.chrome__fav { flex: none; width: 16px; height: 16px; border-radius: 4px; background: hsl(var(--fh) 55% 46%); color: #fff; font: 800 10px/16px system-ui, sans-serif; text-align: center; }
+.addr { display: block; margin: 0 0 6px; padding: 3px 10px; border-radius: 999px; background: var(--chrome-addr); font: 11px/16px ui-monospace, Menlo, monospace; color: var(--color-label-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.addr b { color: var(--color-label-secondary); font-weight: 600; }
+.addr__lock { margin-right: 4px; }
+.items > .item[data-shape="window"] .item__kind { display: none; }
+
+/* アイデア(電球の種別): 付箋。少し傾き、上にのり跡、右下の角がめくれる */
+.items > .item[data-shape="sticky"] { border-radius: 2px; transform: rotate(-0.8deg); box-shadow: none;
+  background: linear-gradient(var(--sticky-glue) 0 18px, transparent 18px), linear-gradient(135deg, var(--sticky-1), var(--sticky-2));
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%); filter: drop-shadow(0 3px 4px rgb(120 90 0 / 0.22)); }
+.items > .item[data-shape="sticky"]:nth-child(even) { transform: rotate(0.7deg); }
+.items > .item[data-shape="sticky"]::after { content: ""; display: block; position: absolute; left: auto; right: 0; bottom: 0; width: 18px; height: 18px; background: linear-gradient(315deg, transparent 50%, var(--sticky-fold) 50%); }
+.items > .item[data-shape="sticky"] .item__title { font-size: 17px; }
+
+/* 名言: 便箋。明朝の見出しと、大きな引用符の透かし */
+.items > .item[data-shape="letter"] { background: var(--letter); box-shadow: 0 0 0 1px var(--letter-edge), var(--paper-shadow); }
+.items > .item[data-shape="letter"]::before { content: "“"; position: absolute; right: 70px; top: -14px; font: 700 76px/1 "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif; color: var(--letter-mark); pointer-events: none; }
+.items > .item[data-shape="letter"] .item__title { font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif; letter-spacing: 0.04em; }
+
+/* 動画: フィルム。左右の薄い帯に穴 */
+.items > .item[data-shape="film"] { border-radius: 4px; padding: 0 12px;
+  background: radial-gradient(circle at 6px 50%, var(--bg-grouped) 2.5px, transparent 3px) 0 0 / 12px 14px repeat-y,
+    radial-gradient(circle at 6px 50%, var(--bg-grouped) 2.5px, transparent 3px) 100% 0 / 12px 14px repeat-y,
+    linear-gradient(90deg, var(--film-band) 12px, var(--paper) 12px calc(100% - 12px), var(--film-band) calc(100% - 12px)); }
+
+/* 写真: ポラロイド + マスキングテープ */
+.items > .item[data-shape="polaroid"] { border-radius: 2px; border: 8px solid var(--paper); border-bottom-width: 22px; transform: rotate(0.6deg); }
+.items > .item[data-shape="polaroid"]::before { content: ""; position: absolute; top: -18px; left: 50%; width: 76px; height: 20px; z-index: 2; transform: translateX(-50%) rotate(-3deg); pointer-events: none;
+  background: repeating-linear-gradient(90deg, rgb(255 255 255 / 0.25) 0 3px, transparent 3px 6px), var(--tape); }
+
+/* まとめ: 紙の束(後ろに2枚) */
+.items > .item[data-shape="stack"] { margin: 0 10px 8px 0; box-shadow: 0 1px 1px rgb(0 0 0 / 0.08), 5px 5px 0 -1px var(--paper), 5px 5px 0 0 var(--paper-edge), 10px 10px 0 -1px var(--paper), 10px 10px 0 0 var(--paper-edge); }
+
+/* プロジェクト: フォルダ。タブと面にプロジェクトの色 */
+.items > .item[data-shape="folder"] { --pc: var(--sys-gray); margin-top: 14px; border-radius: 0 12px 12px 12px;
+  background: linear-gradient(color-mix(in srgb, var(--pc) 16%, var(--paper)), color-mix(in srgb, var(--pc) 9%, var(--paper))); border-top: 3px solid color-mix(in srgb, var(--pc) 55%, var(--paper)); }
+.items > .item[data-shape="folder"]::before { content: ""; position: absolute; left: 0; top: -15px; width: 42%; height: 14px; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--pc) 55%, var(--paper)); clip-path: polygon(0 100%, 0 30%, 4% 0, 88% 0, 100% 100%); }
+.items > .item[data-shape="folder"] .pdot { display: none; }
+
+/* ---------- アクション: 荷札 + 日めくり + 「済」のはんこ ---------- */
+.items > .item[data-shape="ticket"] { --pc: #C7C2B8; min-height: 62px; border-radius: 4px 10px 10px 4px; align-items: center; padding-left: 14px; box-shadow: none;
+  border-left: 4px solid color-mix(in srgb, var(--pc) 70%, var(--paper));
+  clip-path: polygon(14px 0, 100% 0, 100% 100%, 14px 100%, 0 calc(100% - 14px), 0 14px); filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.12)); }
+.items > .item[data-shape="ticket"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 9px; height: 9px; margin-top: -5px; border-radius: 50%; background: var(--bg-grouped); box-shadow: inset 0 0 0 2px var(--paper-edge); }
+.items > .item[data-shape="ticket"] .pdot { display: none; }
+.items > .item[data-shape="ticket"] .item__check { -webkit-appearance: none; appearance: none; position: relative; flex: none; width: 26px; height: 26px; margin: 0 0 0 10px; align-self: center; border: 2px solid #C7C2B8; border-radius: 7px; background: var(--paper); cursor: pointer; }
+.items > .item[data-shape="ticket"] .item__check:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.items > .item[data-shape="ticket"] .item__check:checked { border-color: transparent; background: transparent; animation: none; }
+.items > .item[data-shape="ticket"] .item__check:checked::after { content: "済"; position: absolute; inset: -5px; display: grid; place-items: center; border: 2.5px solid var(--hanko); border-radius: 50%; color: var(--hanko); background: rgb(215 68 62 / 0.06);
+  font: 800 15px/1 "Hiragino Mincho ProN", "Yu Mincho", serif; transform: rotate(-12deg); animation: hanko 0.35s cubic-bezier(0.3, 1.6, 0.5, 1); }
+@keyframes hanko { from { transform: scale(1.8) rotate(-30deg); opacity: 0; } }
+.cal { flex: none; align-self: center; margin: 8px 12px 8px 0; width: 40px; border-radius: 6px; background: var(--paper); box-shadow: 0 1px 0 rgb(0 0 0 / 0.08), 0 0 0 1px var(--paper-edge); overflow: hidden; text-align: center; }
+.cal__m { display: block; font: 700 10px/15px system-ui, sans-serif; color: #fff; background: var(--cal-band); white-space: nowrap; }
+.cal__d { display: block; font: 800 19px/25px system-ui, sans-serif; color: var(--color-label); }
+.cal--warn { transform: rotate(-5deg); }
+.cal--warn .cal__m { background: var(--cal-warn); }
+.done-list .items > .item[data-shape="ticket"] { opacity: 0.75; }
+/* 一覧のカードに付くアクション: 小さな荷札 */
+.badge { border-radius: 4px; }
+.badge--tag { position: relative; padding: 1px 8px 1px 16px; background: var(--kraft); color: var(--kraft-ink); font-weight: 700; clip-path: polygon(6px 0, 100% 0, 100% 100%, 6px 100%, 0 50%); }
+.badge--tag::before { content: ""; position: absolute; left: 6px; top: 50%; width: 5px; height: 5px; margin-top: -2.5px; border-radius: 50%; background: var(--paper); }
+.badge--tag.badge--warn { background: var(--kraft-warn); color: var(--kraft-warn-ink); }
+
+/* ---------- ボタン: ころんと厚みがあり、押すと沈む ---------- */
+.btn, .kind, .pill-select { border-radius: 14px; transition: transform 0.12s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.12s; }
+.kind, .pill-select { background-color: var(--paper); border: 1px solid var(--paper-edge); box-shadow: 0 2px 0 var(--paper-edge); }
+.btn--tinted, .kind.is-active, .pill-select.is-set { background: var(--pop); color: var(--pop-ink); box-shadow: 0 3px 0 var(--pop-edge); font-weight: 700; border-color: transparent; }
+.btn--prominent { background: var(--pop-2); color: var(--pop-2-ink); box-shadow: 0 3px 0 var(--pop-2-edge); font-weight: 700; }
+.btn--tinted:active, .btn--prominent:active, .kind:active { transform: translateY(3px); box-shadow: 0 0 0 transparent; opacity: 1; }
+.kind--edit { box-shadow: none; border: none; }
+.chip-tag:not(.chip-pick):not(.chip-new) { background: var(--paper); color: var(--color-label-secondary); box-shadow: inset 0 0 0 1px var(--color-separator); }
+.tabbar__item.is-active .tabbar__icon { background: var(--pop); color: var(--pop-ink); border-radius: 12px; padding: 2px 10px; }
+.tabbar__item .tabbar__icon { transition: transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.tabbar__item.is-active .tabbar__icon { transform: scale(1.04); }
+
+@media (prefers-reduced-motion: reduce) {
+  .items > .item[data-shape="sticky"], .items > .item[data-shape="polaroid"], .cal--warn { transform: none; }
+  .items > .item[data-shape="ticket"] .item__check:checked::after { animation: none; }
+  .btn--tinted:active, .btn--prominent:active, .kind:active { transform: none; }
+}
