@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { KINDS, BASE_KINDS, KIND_FIELDS, KIND_ICONS, kindIconSvg, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, isArchived, setArchived, setDone, archiveNote, keepsNear, projectSteps, nextOrder, newStep, newProject, stepProgress } from './core.js';
+import { KINDS, BASE_KINDS, KIND_FIELDS, KIND_ICONS, kindIconSvg, kindList, newKindDef, kindDefId, isBaseKind, SORTS, ACTION_SORTS, DUE_WINDOWS, inDueWindow, sortActionList, PROJECT_COLORS, colorVar, thumbOf, needsImage, sigil, sigilSvg, tagSlots, projectSlots, dotFill, linkedInfoCount, sortCards, linkIndex, isInfo, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, forActionList, linkedIds, isArchived, setArchived, setDone, archiveNote, keepsNear, projectSteps, nextOrder, newStep, newProject, stepProgress, textParts, shortUrl } from './core.js';
 import * as gemini from './gemini.js';
 import { exportData, importData } from './backup.js';
 import * as sync from './sync.js';
@@ -18,6 +18,8 @@ const state = {
   actProject: '',
   actDue: '',
   actSort: 'due',
+  // 編集画面をどの閲覧表示から開いたか
+  editFrom: '',
 };
 
 const $view = document.getElementById('view');
@@ -76,6 +78,34 @@ function setTitle(text, { back = false } = {}) {
   document.getElementById('nav-title-large').textContent = text;
   document.getElementById('back').hidden = !back;
   document.title = `${text} - idea-box`;
+  setNavAction(null);
+}
+
+// 右上のボタン。ふだんは設定(歯車)、閲覧表示では「編集」、編集画面では「完了」
+let navActionFn = null;
+function setNavAction(label, fn = null) {
+  const btn = document.getElementById('nav-edit');
+  btn.hidden = !label;
+  btn.textContent = label || '';
+  document.getElementById('to-settings').hidden = !!label;
+  navActionFn = fn;
+}
+// 閲覧表示から編集画面へ。「完了」や「戻る」で、来た閲覧表示に戻れるよう履歴に積む
+function openEdit(viewHash) {
+  state.editFrom = viewHash;
+  location.hash = `${viewHash}/edit`;
+}
+// 編集を終えて閲覧表示へ。閲覧表示から来たなら履歴を戻り、直接開いたなら置き換える(戻るで編集に戻らないように)
+async function leaveEdit(viewHash) {
+  // 書いてすぐ「完了」を押しても、書いた内容が表示に出るよう先に保存する
+  await flushSaves();
+  if (state.editFrom === viewHash && history.length > 1) { state.editFrom = ''; history.back(); }
+  else location.replace(viewHash);
+}
+
+// 閲覧表示の文: 改行はそのまま、URLは押せるリンクに
+function richText(text) {
+  return textParts(text).map(x => x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(shortUrl(x.url))}</a>` : esc(x.text)).join('');
 }
 
 function setTab(tab) {
@@ -601,29 +631,46 @@ async function renderTag(id) {
 
 // ---------- カード ----------
 // 欄ごとに別のタイマーを持つ。500ms以内に別の欄へ移っても、前の欄の書きかけを落とさない
+// 待っている書きかけ。「完了」で表示に戻る前に、ここにあるものを先に保存する
+const pendingSaves = new Map();
+async function flushSaves() {
+  const list = [...pendingSaves.values()];
+  pendingSaves.clear();
+  for (const run of list) await run();
+}
 function autosave(card, fields, after) {
   const timers = {};
   for (const [key, el] of Object.entries(fields)) {
     el.addEventListener('input', () => {
       clearTimeout(timers[key]);
-      timers[key] = setTimeout(async () => {
+      const pk = `${card.id}:${key}`;
+      const run = async () => {
+        clearTimeout(timers[key]);
+        pendingSaves.delete(pk);
         card[key] = el.value;
         if (key === 'url' || key === 'body') card.kind = card.kind === 'memo' || card.kind === 'url' || card.kind === 'video' ? newCard({ id: card.id, text: card.body, url: card.url }).kind : card.kind;
         await save(card);
         if (after) after();
-      }, 500);
+      };
+      pendingSaves.set(pk, run);
+      timers[key] = setTimeout(run, 500);
     });
   }
 }
 
-async function renderCard(id) {
+// 受信箱のカードは、まず中身を書いて受信箱から出すので、はじめから編集画面で開く。
+// それ以外(すべて・タグ・プロジェクトなどから)は、読みやすい閲覧表示で開き、「編集」で編集画面へ
+async function renderCard(id, { edit = false } = {}) {
   const card = byId(id);
   if (!card || card.deleted) { location.hash = '#all'; return; }
   if (card.kind === 'tag') { location.hash = `#tag/${id}`; return; }
   if (card.kind === 'project') { location.hash = `#project/${id}`; return; }
   if (card.kind === 'step') return renderStep(card);
+  if (!edit && !card.inbox) return renderCardView(card);
   setTab(card.inbox ? 'inbox' : 'all');
   setTitle(kindName(card.kind) || 'カード', { back: true });
+  if (!card.inbox) setNavAction('完了', () => leaveEdit(`#card/${id}`));
+  const again = () => renderCard(id, { edit });
   const image = card.kind === 'photo' ? await db.get('images', id) : null;
   const near = nearCards(items().filter(keepsNear), card);
   const names = tagNames();
@@ -700,7 +747,7 @@ async function renderCard(id) {
         if (!card.title && r.title) card.title = r.title;
         card.body = [card.body, r.text].filter(Boolean).join('\n\n');
         await save(card);
-        renderCard(id);
+        again();
       } catch (err) {
         toast(err.message, 5000);
         btn.disabled = false; btn.textContent = '文字を読み取る(Gemini)';
@@ -716,7 +763,7 @@ async function renderCard(id) {
   fields.url.addEventListener('change', () => { if (card.image || card.imageTried) { delete card.image; delete card.imageTried; save(card); setTimeout(fillImages, 800); } });
   grow(fields.body);
   fields.body.addEventListener('input', () => grow(fields.body));
-  document.getElementById('c-kind').addEventListener('change', async e => { card.kind = e.target.value; await save(card); renderCard(id); });
+  document.getElementById('c-kind').addEventListener('change', async e => { card.kind = e.target.value; await save(card); again(); });
 
   // タグ(押して付ける・外す)
   mountPicker('c-tags', {
@@ -743,21 +790,21 @@ async function renderCard(id) {
       setDone(card, e.target.checked);
       await save(card);
       if (e.target.checked) toast('完了しました。カードはアーカイブに入ります');
-      renderCard(id);
+      again();
     });
     let t;
     document.getElementById('a-text').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => set({ text: e.target.value }), 500); });
     document.getElementById('a-due').addEventListener('change', e => set({ due: e.target.value || null }));
     const note = document.getElementById('a-note');
     if (note) note.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => set({ doneNote: note.value }), 500); });
-    document.getElementById('a-remove').addEventListener('click', async () => { card.action = null; await save(card); renderCard(id); });
+    document.getElementById('a-remove').addEventListener('click', async () => { card.action = null; await save(card); again(); });
   } else {
     const input = document.getElementById('a-new');
     const add = async () => {
       if (!input.value.trim()) { input.focus(); return; }
       card.action = { text: input.value.trim(), due: null, done: false, doneAt: null, doneNote: '' };
       await save(card);
-      renderCard(id);
+      again();
     };
     document.getElementById('a-add').addEventListener('click', add);
     input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) add(); });
@@ -768,18 +815,96 @@ async function renderCard(id) {
     setArchived(card, on);
     await save(card);
     toast(on ? 'アーカイブしました。「すべて」の「アーカイブ」で見られます' : '一覧に戻しました');
-    renderCard(id);
+    again();
   });
   const archNote = document.getElementById('c-arch-note');
   if (archNote) autosave(card, { archiveNote: archNote });
   const sorted = document.getElementById('c-sorted');
-  if (sorted) sorted.addEventListener('click', async () => { card.inbox = false; await save(card); toast('受信箱から出しました'); renderCard(id); });
+  if (sorted) sorted.addEventListener('click', async () => { card.inbox = false; await save(card); toast('受信箱から出しました'); again(); });
   const back = document.getElementById('c-inbox');
-  if (back) back.addEventListener('click', async () => { card.inbox = true; await save(card); renderCard(id); });
+  if (back) back.addEventListener('click', async () => { card.inbox = true; await save(card); again(); });
   document.getElementById('c-del').addEventListener('click', async () => {
     if (!confirm('このカードを削除します。')) return;
     await removeCard(card);
     history.length > 1 ? history.back() : (location.hash = '#all');
+  });
+}
+
+// カードの閲覧表示: 書いたことを読みやすく見せる。書き換えは右上の「編集」から
+const linkIcon = '<svg class="ic ic--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>';
+// タグとプロジェクトを押せる小さな札で(タグのページ・プロジェクトへ)
+function connChips(tagList, projList) {
+  if (!tagList.length && !projList.length) return '';
+  return `<div class="view__chips chips">${projList.map(x => `<a class="chip-tag chip-project" href="#project/${esc(x.id)}">${colorDot(x)}${esc(x.title || '(無題)')}</a>`).join('')}${tagList.map(t => `<a class="chip-tag" href="#tag/${esc(t.id)}">#${esc(t.title)}</a>`).join('')}</div>`;
+}
+
+async function renderCardView(card) {
+  const id = card.id;
+  setTab('all');
+  setTitle(kindName(card.kind) || 'カード', { back: true });
+  setNavAction('編集', () => openEdit(`#card/${id}`));
+  const image = card.kind === 'photo' ? await db.get('images', id).catch(() => null) : null;
+  const th = thumbOf(card);
+  const near = nearCards(items().filter(keepsNear), card);
+  const names = tagNames();
+  const refs = (card.refs || []).map(byId).filter(c => c && !c.deleted);
+  const myTags = (card.tags || []).map(byId).filter(t => t && !t.deleted && t.kind === 'tag');
+  const myProjects = linked(id, c => c.kind === 'project');
+  const a = card.action;
+  const body = (card.body || '').trim();
+  const quote = (card.quote || '').trim();
+  const archived = isArchived(card);
+  const note = archived && !(a && a.done) ? (card.archiveNote || '').trim() : '';
+  const empty = !card.title && !body && !quote && !card.url;
+  $view.innerHTML = `
+    ${image ? `<div class="photo"><img id="photo" alt="写真"></div>` : ''}
+    ${!image && th && th.src ? `<div class="photo photo--web thumb-hero"><span class="thumb"><img src="${esc(th.src)}" alt="" referrerpolicy="no-referrer"></span></div>` : ''}
+    <article class="card view">
+      <p class="view__kind">${kindIcon(card.kind, 14)}<span>${esc(kindName(card.kind))}</span>${archived ? `<span class="badge">アーカイブ${card.archivedAt ? ` ${esc(shortDue(card.archivedAt.slice(0, 10)))}` : ''}</span>` : ''}</p>
+      ${card.title ? `<h2 class="view__title">${projectDot(card)}${esc(card.title)}</h2>` : ''}
+      ${body ? `<div class="view__body">${!card.title ? projectDot(card) : ''}${richText(body)}</div>` : ''}
+      ${quote ? `<blockquote class="view__quote">${richText(quote)}</blockquote>` : ''}
+      ${card.url ? `<a class="view__link" href="${esc(card.url)}" target="_blank" rel="noopener">${linkIcon}<span>${esc(shortUrl(card.url, 60))}</span></a>` : ''}
+      ${empty ? '<p class="muted">まだ何も書かれていません。右上の「編集」から書けます。</p>' : ''}
+      ${connChips(myTags, myProjects)}
+    </article>
+
+    ${a ? `<section class="list-section"><h2 class="list-section__header">アクション</h2>
+      <ul class="list list--inset items"><li class="item item--action">
+        <input type="checkbox" class="item__check" id="v-done" ${a.done ? 'checked' : ''} aria-label="${esc(a.text || 'アクション')} を完了">
+        <div class="item__main">
+          <span class="item__title${a.done ? ' is-done' : ''}">${esc(a.text || '(未記入)')}</span>
+          ${a.due || a.done ? `<span class="item__meta">${a.done ? `<span class="badge">完了${a.doneAt ? ` ${esc(shortDue(a.doneAt.slice(0, 10)))}` : ''}</span>` : `<span class="badge${isOverdue(a, today()) ? ' badge--warn' : ''}">期限 ${esc(shortDue(a.due))}</span>`}</span>` : ''}
+          ${a.done && (a.doneNote || '').trim() ? `<span class="view__note">${richText(a.doneNote.trim())}</span>` : ''}
+        </div>
+      </li></ul></section>` : ''}
+
+    ${note ? `<section class="list-section"><h2 class="list-section__header">実現メモ</h2>
+      <div class="card"><p class="view__body view__body--sm">${richText(note)}</p></div></section>` : ''}
+
+    <div class="sigil-box pad">${cardSigil(card, 44)}<p class="small muted">つながりの紋章: 外の点はタグ、弧はプロジェクト、内の線はつないだカード。つながりが似たカードは模様も似ます。</p></div>
+
+    ${refs.length ? `<section class="list-section"><h2 class="list-section__header">元にしたカード</h2><ul class="list list--inset items">${refs.map(c => cardRow(c, { names })).join('')}</ul></section>` : ''}
+    ${near.length ? `<section class="list-section"><h2 class="list-section__header">近いカード</h2>
+      <ul class="list list--inset items">${near.map(n => cardRow(n.card, { names })).join('')}</ul>
+      <p class="list-section__footer">同じタグや、似た言葉を含むカードです。</p></section>` : ''}
+
+    <p class="pad small muted">作成 ${esc(fmtDate(card.createdAt))} ・ 更新 ${esc(fmtDate(card.updatedAt))}</p>`;
+
+  if (image) {
+    const url = URL.createObjectURL(image.blob);
+    const img = document.getElementById('photo');
+    img.src = url;
+    img.onload = () => URL.revokeObjectURL(url);
+  }
+  // 完了の印は、書き換えではないので閲覧表示でも付けられる
+  const done = document.getElementById('v-done');
+  if (done) done.addEventListener('change', async e => {
+    if (e.target.checked) celebrate(e.target);
+    setDone(card, e.target.checked);
+    await save(card);
+    if (e.target.checked) toast('完了しました。カードはアーカイブに入ります');
+    renderCardView(card);
   });
 }
 
@@ -815,17 +940,20 @@ async function renderProjects() {
     if (!input.value.trim()) { input.focus(); return; }
     const p = newProject({ id: db.uid(), title: input.value });
     await save(p);
-    location.hash = `#project/${p.id}`;
+    location.hash = `#project/${p.id}/edit`;
   };
   document.getElementById('add-project').addEventListener('click', add);
   input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) add(); });
 }
 
-async function renderProject(id, { suggestions = null } = {}) {
+// プロジェクトも、ふだんは閲覧表示。「編集」で今までの編集画面へ
+async function renderProject(id, { suggestions = null, edit = false } = {}) {
   const p = byId(id);
   if (!p || p.deleted || p.kind !== 'project') { location.hash = '#projects'; return; }
+  if (!edit) return renderProjectView(p);
   setTab('projects');
   setTitle(p.title || 'プロジェクト', { back: true });
+  setNavAction('完了', () => leaveEdit(`#project/${id}`));
   const steps = projectSteps(state.cards, id);
   const rel = linked(id);
   const relProjects = rel.filter(c => c.kind === 'project');
@@ -893,7 +1021,8 @@ async function renderProject(id, { suggestions = null } = {}) {
     </section>`;
 
   autosave(p, { title: document.getElementById('p-title'), goal: document.getElementById('p-goal'), body: document.getElementById('p-body'), closeNote: document.getElementById('p-close-note') },
-    () => setTitle(p.title || 'プロジェクト', { back: true }));
+    // 編集画面にいるときだけ見出しを直す(表示に戻った後に遅れて呼ばれても、「編集」ボタンを消さない)
+    () => { if (location.hash !== `#project/${id}/edit`) return; setTitle(p.title || 'プロジェクト', { back: true }); setNavAction('完了', () => leaveEdit(`#project/${id}`)); });
   document.getElementById('p-due').addEventListener('change', async e => { p.due = e.target.value || null; await save(p); });
   $view.querySelectorAll('.swatch').forEach(b => b.addEventListener('click', async () => {
     p.color = b.dataset.color || null;
@@ -906,7 +1035,7 @@ async function renderProject(id, { suggestions = null } = {}) {
   const addStep = async () => {
     if (!stepInput.value.trim()) { stepInput.focus(); return; }
     await save(newStep({ id: db.uid(), projectId: id, text: stepInput.value, order: nextOrder(projectSteps(state.cards, id)) }));
-    await renderProject(id);
+    await renderProject(id, { edit: true });
     document.getElementById('new-step').focus();
   };
   document.getElementById('add-step').addEventListener('click', addStep);
@@ -916,7 +1045,7 @@ async function renderProject(id, { suggestions = null } = {}) {
     if (cb.checked) celebrate(cb);
     setDone(st, cb.checked);
     await save(st);
-    renderProject(id);
+    renderProject(id, { edit: true });
   }));
   $view.querySelectorAll('#steps [data-move]').forEach(b => b.addEventListener('click', async () => {
     const i = steps.findIndex(st => st.id === b.closest('.item').dataset.id);
@@ -926,7 +1055,7 @@ async function renderProject(id, { suggestions = null } = {}) {
     steps.forEach((st, k) => { st.order = k + 1; });
     [steps[i].order, steps[j].order] = [steps[j].order, steps[i].order];
     for (const st of steps) await save(st);
-    renderProject(id);
+    renderProject(id, { edit: true });
   }));
 
   // AIの手順案
@@ -937,7 +1066,7 @@ async function renderProject(id, { suggestions = null } = {}) {
     sug.disabled = true; sug.textContent = '考えています…';
     try {
       const list = await gemini.suggestSteps({ apiKey, model: await db.getMeta('geminiModel', gemini.DEFAULT_MODEL), project: p, steps: steps.map(st => st.title), related: relInfo.map(displayTitle) });
-      renderProject(id, { suggestions: list });
+      renderProject(id, { suggestions: list, edit: true });
     } catch (err) {
       toast(err.message, 5000);
       sug.disabled = false; sug.textContent = 'AIに手順の案を出してもらう';
@@ -947,10 +1076,10 @@ async function renderProject(id, { suggestions = null } = {}) {
   if (take) take.addEventListener('click', async () => {
     let order = nextOrder(steps);
     for (const cb of $view.querySelectorAll('.suggest [data-s]:checked')) await save(newStep({ id: db.uid(), projectId: id, text: suggestions[Number(cb.dataset.s)], order: order++ }));
-    renderProject(id);
+    renderProject(id, { edit: true });
   });
   const sclose = document.getElementById('s-close');
-  if (sclose) sclose.addEventListener('click', () => renderProject(id));
+  if (sclose) sclose.addEventListener('click', () => renderProject(id, { edit: true }));
 
   // つながり
   mountPicker('p-links', {
@@ -968,21 +1097,90 @@ async function renderProject(id, { suggestions = null } = {}) {
     c.inbox = false;
     c.links = [id];
     await save(c);
-    renderProject(id);
+    renderProject(id, { edit: true });
   };
   document.getElementById('add-info').addEventListener('click', addInfo);
   infoInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) addInfo(); });
 
   // 閉じる・開く・削除
   const pc = document.getElementById('p-close');
-  if (pc) pc.addEventListener('click', async () => { p.closeNote = document.getElementById('p-close-note').value; p.status = 'closed'; p.closedAt = new Date().toISOString(); await save(p); toast('プロジェクトを閉じました'); renderProject(id); });
+  if (pc) pc.addEventListener('click', async () => { p.closeNote = document.getElementById('p-close-note').value; p.status = 'closed'; p.closedAt = new Date().toISOString(); await save(p); toast('プロジェクトを閉じました'); renderProject(id, { edit: true }); });
   const pr = document.getElementById('p-reopen');
-  if (pr) pr.addEventListener('click', async () => { p.status = 'active'; p.closedAt = null; await save(p); renderProject(id); });
+  if (pr) pr.addEventListener('click', async () => { p.status = 'active'; p.closedAt = null; await save(p); renderProject(id, { edit: true }); });
   document.getElementById('p-del').addEventListener('click', async () => {
     if (!confirm(`「${p.title}」と、その手順を削除します。つないだ情報のカードは残ります。`)) return;
     await removeCard(p);
     location.hash = '#projects';
   });
+}
+
+// プロジェクトの閲覧表示: ゴール・期日・メモ・手順・つながりを読みやすく。手順の完了の印はここでも付けられる
+async function renderProjectView(p) {
+  const id = p.id;
+  setTab('projects');
+  setTitle(p.title || 'プロジェクト', { back: true });
+  setNavAction('編集', () => openEdit(`#project/${id}`));
+  const steps = projectSteps(state.cards, id);
+  const pr = stepProgress(steps);
+  const rel = linked(id);
+  const relProjects = rel.filter(c => c.kind === 'project');
+  const relInfo = rel.filter(isInfo);
+  const names = tagNames();
+  const t = today();
+  const closed = p.status === 'closed';
+  const goal = (p.goal || '').trim();
+  const memo = (p.body || '').trim();
+  const closeNote = (p.closeNote || '').trim();
+  const stepRow = st => {
+    const subs = linked(st.id, c => c.kind === 'project' && c.id !== id);
+    const sn = (st.body || '').trim();
+    return `<li class="item item--action item--step" data-id="${esc(st.id)}">
+      <input type="checkbox" class="item__check" ${st.action.done ? 'checked' : ''} aria-label="${esc(st.title)} を完了">
+      <a class="item__main" href="#card/${esc(st.id)}">
+        <span class="item__title${st.action.done ? ' is-done' : ''}">${esc(st.title || '(未記入)')}</span>
+        ${sn ? `<span class="item__snippet">${esc(sn.slice(0, 140))}</span>` : ''}
+        ${st.action.due || subs.length ? `<span class="item__meta">${st.action.due ? `<span class="badge${!st.action.done && isOverdue(st.action, t) ? ' badge--warn' : ''}">${esc(shortDue(st.action.due))}</span>` : ''}${subs.map(s => `<span class="kind-project">→ ${esc(s.title)}</span>`).join('')}</span>` : ''}
+      </a>
+    </li>`;
+  };
+  const facts = [
+    p.due ? `<span class="badge${!closed && p.due < t ? ' badge--warn' : ''}">期日 ${esc(shortDue(p.due))}</span>` : '',
+    pr.all ? `<span>手順 ${pr.done}/${pr.all}</span>` : '',
+    relInfo.length ? `<span>カード ${relInfo.length}</span>` : '',
+    closed ? `<span class="badge">閉じた${p.closedAt ? ` ${esc(fmtDate(p.closedAt))}` : ''}</span>` : '',
+  ].filter(Boolean).join('');
+  $view.innerHTML = `
+    <article class="card view">
+      <p class="view__kind">${colorDot(p)}<span>プロジェクト</span>${facts}</p>
+      ${goal ? `<p class="view__label">ゴール</p><div class="view__goal">${richText(goal)}</div>` : ''}
+      ${memo ? `<p class="view__label">メモ</p><div class="view__body view__body--sm">${richText(memo)}</div>` : ''}
+      ${!goal && !memo ? '<p class="muted">ゴールやメモはまだありません。右上の「編集」から書けます。</p>' : ''}
+      ${pr.all ? `<div class="view__progress" role="progressbar" aria-label="手順の進み" aria-valuemin="0" aria-valuemax="${pr.all}" aria-valuenow="${pr.done}"><span style="width:${Math.round(pr.done / pr.all * 100)}%"></span></div>` : ''}
+    </article>
+
+    <section class="list-section"><h2 class="list-section__header">手順${pr.all ? ` <span class="count">${pr.done}/${pr.all}</span>` : ''}</h2>
+      ${steps.length ? `<ul class="list list--inset items" id="steps">${steps.map(stepRow).join('')}</ul>`
+        : '<p class="list-section__footer">手順はまだありません。「編集」から足したり、AIに案を出してもらったりできます。</p>'}
+    </section>
+
+    ${relProjects.length ? `<section class="list-section"><h2 class="list-section__header">つながっているプロジェクト</h2>
+      <div class="card">${connChips([], relProjects)}</div></section>` : ''}
+
+    ${relInfo.length ? `<section class="list-section"><h2 class="list-section__header">つないだ情報 <span class="count">${relInfo.length}</span></h2>
+      <ul class="list list--inset items">${relInfo.map(c => cardRow(c, { names })).join('')}</ul></section>` : ''}
+
+    ${closed && closeNote ? `<section class="list-section"><h2 class="list-section__header">閉じたときのメモ</h2>
+      <div class="card"><p class="view__body view__body--sm">${richText(closeNote)}</p></div></section>` : ''}
+
+    <p class="pad small muted">作成 ${esc(fmtDate(p.createdAt))} ・ 更新 ${esc(fmtDate(p.updatedAt))}</p>`;
+
+  $view.querySelectorAll('#steps .item__check').forEach(cb => cb.addEventListener('change', async () => {
+    const st = byId(cb.closest('.item').dataset.id);
+    if (cb.checked) celebrate(cb);
+    setDone(st, cb.checked);
+    await save(st);
+    renderProjectView(p);
+  }));
 }
 
 // 手順の画面: 書き足す、期限、別のプロジェクトへ移す、サブプロジェクトにする
@@ -1044,7 +1242,7 @@ async function renderStep(st) {
     // 新しいプロジェクトの側に、元の手順と元のプロジェクトへのつながりを書く
     np.links = [id, ...(owner && !owner.deleted ? [owner.id] : [])];
     await save(np);
-    location.hash = `#project/${np.id}`;
+    location.hash = `#project/${np.id}/edit`;
   });
   document.getElementById('st-del').addEventListener('click', async () => {
     if (!confirm('この手順を削除します。')) return;
@@ -1302,23 +1500,25 @@ async function takeCapture() {
 
 // ---------- ルーティング ----------
 async function route() {
-  const [name, arg] = location.hash.replace(/^#/, '').split('/');
+  const [name, arg, mode] = location.hash.replace(/^#/, '').split('/');
+  const edit = mode === 'edit';
   window.scrollTo(0, 0);
   linkCache = slotCache = kindCache = null;
   switch (name) {
     case 'all': return renderAll();
     case 'tags': return renderTags();
     case 'tag': return renderTag(decodeURIComponent(arg || ''));
-    case 'card': return renderCard(decodeURIComponent(arg || ''));
+    case 'card': return renderCard(decodeURIComponent(arg || ''), { edit });
     case 'actions': return renderActions();
     case 'projects': return renderProjects();
-    case 'project': return renderProject(decodeURIComponent(arg || ''));
+    case 'project': return renderProject(decodeURIComponent(arg || ''), { edit });
     case 'settings': return renderSettings();
     case 'kinds': return renderKinds();
     default: return renderInbox();
   }
 }
 
+document.getElementById('nav-edit').addEventListener('click', () => { if (navActionFn) navActionFn(); });
 document.getElementById('back').addEventListener('click', () => history.length > 1 ? history.back() : (location.hash = '#inbox'));
 addEventListener('hashchange', route);
 

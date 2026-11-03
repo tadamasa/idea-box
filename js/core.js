@@ -111,6 +111,30 @@ export function extractUrl(text) {
   return m ? m[0].replace(/[).,、。]+$/, '') : '';
 }
 
+// 閲覧表示用に、文をURLとそれ以外に分ける。URLの末尾の句読点や閉じかっこは文の側に残す
+export function textParts(text) {
+  const out = [];
+  // 日本語の道筋(…/wiki/ツェッテルカステン)は残し、空白・かぎかっこ・全角の句読点やかっこで切る
+  const re = /https?:\/\/[^\s<>"'「」『』（）【】。、，．！？]+/gi;
+  const s = String(text ?? '');
+  let last = 0, m;
+  while ((m = re.exec(s))) {
+    const url = m[0].replace(/[).,、。]+$/, '');
+    if (m.index > last) out.push({ text: s.slice(last, m.index) });
+    out.push({ url });
+    last = m.index + url.length;
+    re.lastIndex = last;
+  }
+  if (last < s.length) out.push({ text: s.slice(last) });
+  return out;
+}
+
+// URLの見せ方: ドメインと道筋を短く(https:// と www. を省く)
+export function shortUrl(url, max = 48) {
+  const s = String(url || '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/$/, '');
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
 // 入力内容から種類を推し量る。選ぶ手間を省くためのもので、あとで変えられる。
 export function detectKind({ text = '', url = '', kind = '' } = {}) {
   if (kind && KIND_KEY_RE.test(kind) && !STRUCT_KINDS.includes(kind)) return kind;

@@ -1,7 +1,7 @@
 // npm test で実行。画面に触れない処理と、アイデアハブ(Code.gs)の動きを確かめる。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps, sortCards, linkIndex, isArchived, setArchived, setDone, keepsNear } from '../js/core.js';
+import { detectKind, parseCapture, newCard, normTag, tagId, displayTitle, matches, nearCards, relatedTags, sortActions, isOverdue, isInfo, forActionList, linkedIds, projectSteps, nextOrder, newStep, newProject, stepProgress, parseSteps, sortCards, linkIndex, isArchived, setArchived, setDone, keepsNear, textParts, shortUrl } from '../js/core.js';
 import { splitOcr } from '../js/gemini.js';
 import { loadHub } from './gas-mock.mjs';
 
@@ -415,4 +415,20 @@ test('アーカイブ: アクションのないカードも自分で入れられ
   assert.equal('archivedAt' in c, false);
   const target = { id: 't', kind: 'memo', title: '', body: 'ブログに書く', quote: '', tags: [] };
   assert.equal(nearCards([{ ...c, id: 'm2', body: 'x', archiveNote: 'ブログに書いた' }], target)[0].card.id, 'm2'); // 実現メモの言葉でも近さが出る
+});
+
+test('閲覧表示: 文をURLとそれ以外に分け、末尾の句読点は文に残す', () => {
+  assert.deepEqual(textParts('見て https://a.example/x?y=1。次も'), [{ text: '見て ' }, { url: 'https://a.example/x?y=1' }, { text: '。次も' }]);
+  assert.deepEqual(textParts('(https://b.example/)'), [{ text: '(' }, { url: 'https://b.example/' }, { text: ')' }]);
+  assert.deepEqual(textParts('URLなし'), [{ text: 'URLなし' }]);
+  assert.deepEqual(textParts(''), []);
+  assert.deepEqual(textParts('詳しくは https://ja.wikipedia.org/wiki/ツェッテルカステン を参照'), [{ text: '詳しくは ' }, { url: 'https://ja.wikipedia.org/wiki/ツェッテルカステン' }, { text: ' を参照' }]);
+  assert.deepEqual(textParts('「https://a.jp/x」、'), [{ text: '「' }, { url: 'https://a.jp/x' }, { text: '」、' }]);
+  assert.deepEqual(textParts('http://a.jp http://b.jp'), [{ url: 'http://a.jp' }, { text: ' ' }, { url: 'http://b.jp' }]);
+});
+
+test('閲覧表示: URLを短く見せる', () => {
+  assert.equal(shortUrl('https://www.example.com/'), 'example.com');
+  assert.equal(shortUrl('https://example.com/a/b'), 'example.com/a/b');
+  assert.equal(shortUrl('https://example.com/' + 'x'.repeat(80), 20).length, 20);
 });
