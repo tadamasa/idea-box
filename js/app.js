@@ -109,6 +109,10 @@ function richText(text) {
 }
 
 function setTab(tab) {
+  // ヘッダーの柄と切手はタブごとに変える(paper.css)。切手の絵はタブバーのアイコンを写す
+  document.documentElement.dataset.tab = tab;
+  const icon = document.querySelector(`.tabbar__item[data-tab="${tab}"] .tabbar__icon`);
+  document.getElementById('nav-stamp').innerHTML = icon ? `<span class="nav__stamp-paper">${icon.innerHTML}</span>` : '';
   for (const a of document.querySelectorAll('.tabbar__item')) {
     const on = a.dataset.tab === tab;
     a.classList.toggle('is-active', on);
