@@ -151,7 +151,7 @@
   --hd-ink: rgb(60 50 30 / 0.07);
   --hd-air-r: #F2B8B0; --hd-air-b: #B5C8EC;
   --hd-grid: rgb(70 120 200 / 0.10);
-  --hd-plan: #EAF0F6; --hd-plan-line: rgb(90 130 180 / 0.10); --hd-stitch: rgb(90 120 160 / 0.40);
+  --hd-plan: #EDF0EA; --hd-plan-line: rgb(110 140 100 / 0.12); --hd-stitch: rgb(100 130 95 / 0.40);
   --hd-tape-1: rgb(150 205 185 / 0.45); --hd-tape-2: rgb(150 205 185 / 0.25);
   --hd-rule: rgb(80 120 200 / 0.10); --hd-margin: rgb(220 80 80 / 0.28);
   --stamp-bg: #FFFDF7; --stamp-ink: #A0522D;
@@ -161,7 +161,7 @@
     --hd-ink: rgb(255 255 255 / 0.05);
     --hd-air-r: #6E3C36; --hd-air-b: #34466B;
     --hd-grid: rgb(140 170 230 / 0.08);
-    --hd-plan: #1C2330; --hd-plan-line: rgb(140 170 220 / 0.08); --hd-stitch: rgb(150 180 220 / 0.35);
+    --hd-plan: #1D231C; --hd-plan-line: rgb(150 180 140 / 0.08); --hd-stitch: rgb(150 180 140 / 0.35);
     --hd-tape-1: rgb(90 150 130 / 0.30); --hd-tape-2: rgb(90 150 130 / 0.16);
     --hd-rule: rgb(140 170 230 / 0.08); --hd-margin: rgb(240 120 120 / 0.25);
     --stamp-bg: #2B2822; --stamp-ink: #E0A57A;
@@ -189,7 +189,7 @@
 /* タグ: マスキングテープを斜めに一本 */
 /* タグ: 淡いミントの斜めじまのマスキングテープ(地はそのまま) */
 :root[data-tab="tags"] .nav__large-row { background: repeating-linear-gradient(-45deg, var(--hd-tape-1) 0 6px, var(--hd-tape-2) 6px 12px) no-repeat 8px 30% / 62% 48%; }
-/* プロジェクト: 淡い青の製図用紙とステッチ */
+/* プロジェクト: 淡いセージ色の製図用紙とステッチ */
 :root[data-tab="projects"] .nav { background-color: color-mix(in srgb, var(--hd-plan) 85%, transparent); background-image: linear-gradient(var(--hd-plan-line) 1px, transparent 1px), linear-gradient(90deg, var(--hd-plan-line) 1px, transparent 1px); background-size: 28px 28px; }
 :root[data-tab="projects"] .nav::before { bottom: 4px; height: 0; border-bottom: 1.5px dashed var(--hd-stitch); left: 12px; right: 12px; }
 /* アクション: 手帳の罫線と赤い余白線 */
