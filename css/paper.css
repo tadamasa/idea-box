@@ -145,3 +145,58 @@
   .items > .item[data-shape="ticket"] .item__check:checked::after { animation: none; }
   .btn--tinted:active, .btn--prominent:active, .kind:active { transform: none; }
 }
+
+/* ---------- ヘッダー: タブごとに文房具の柄。大きな見出しの右に切手 ---------- */
+:root {
+  --hd-ink: rgb(60 50 30 / 0.07);
+  --hd-air-r: #F2B8B0; --hd-air-b: #B5C8EC;
+  --hd-grid: rgb(70 120 200 / 0.10);
+  --hd-plan: #EDF0EA; --hd-plan-line: rgb(110 140 100 / 0.12); --hd-stitch: rgb(100 130 95 / 0.40);
+  --hd-tape-1: rgb(150 205 185 / 0.45); --hd-tape-2: rgb(150 205 185 / 0.25);
+  --hd-rule: rgb(80 120 200 / 0.10); --hd-margin: rgb(220 80 80 / 0.28);
+  --stamp-bg: #FFFDF7; --stamp-ink: #A0522D;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hd-ink: rgb(255 255 255 / 0.05);
+    --hd-air-r: #6E3C36; --hd-air-b: #34466B;
+    --hd-grid: rgb(140 170 230 / 0.08);
+    --hd-plan: #1D231C; --hd-plan-line: rgb(150 180 140 / 0.08); --hd-stitch: rgb(150 180 140 / 0.35);
+    --hd-tape-1: rgb(90 150 130 / 0.30); --hd-tape-2: rgb(90 150 130 / 0.16);
+    --hd-rule: rgb(140 170 230 / 0.08); --hd-margin: rgb(240 120 120 / 0.25);
+    --stamp-bg: #2B2822; --stamp-ink: #E0A57A;
+  }
+}
+.nav__large-row { display: flex; align-items: center; justify-content: space-between; padding-right: var(--space-4); }
+.nav__large-row .nav__title-large { min-width: 0; }
+.nav__stamp { flex: none; display: none; width: 35px; height: 40px; margin-bottom: 10px; transform: rotate(6deg); filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.22)); transition: opacity var(--dur-fast, 0.15s) ease; }
+/* 縁だけにミシン目: 中は塗り、縁は5pxごとに半円の穴 */
+.nav__stamp-paper { display: block; box-sizing: border-box; width: 100%; height: 100%; padding: 3px; color: var(--stamp-ink); background: var(--stamp-bg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, radial-gradient(circle 2px, transparent 95%, #000) -2.5px -2.5px / 5px 5px;
+  mask: linear-gradient(#000 0 0) content-box, radial-gradient(circle 2px, transparent 95%, #000) -2.5px -2.5px / 5px 5px; }
+.nav__stamp svg { display: block; width: 100%; height: 100%; box-sizing: border-box; padding: 5px 4px; border: 1px solid color-mix(in srgb, var(--stamp-ink) 45%, transparent); stroke-width: 1.8; }
+:root:is([data-tab="inbox"], [data-tab="all"], [data-tab="tags"], [data-tab="projects"], [data-tab="actions"]) .nav__stamp { display: block; }
+.nav:has(#back:not([hidden])) .nav__stamp, .nav.is-collapsed .nav__stamp { opacity: 0; }
+
+/* 下の縁の飾り(::after はスクロールのにじみに使っている) */
+.nav::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 0; pointer-events: none; }
+
+/* 受信箱: エアメールの封筒(下の縁に赤と青の斜めじま) */
+:root[data-tab="inbox"] .nav { background-image: linear-gradient(rgb(255 250 240 / 0.35), rgb(255 250 240 / 0.35)); }
+:root[data-tab="inbox"] .nav::before { height: 5px; background: repeating-linear-gradient(-45deg, var(--hd-air-r) 0 10px, transparent 10px 15px, var(--hd-air-b) 15px 25px, transparent 25px 30px); }
+/* すべて: 方眼紙 */
+:root[data-tab="all"] .nav { background-image: linear-gradient(var(--hd-grid) 1px, transparent 1px), linear-gradient(90deg, var(--hd-grid) 1px, transparent 1px); background-size: 14px 14px; }
+/* タグ: マスキングテープを斜めに一本 */
+/* タグ: 淡いミントの斜めじまのマスキングテープ(地はそのまま) */
+:root[data-tab="tags"] .nav__large-row { background: repeating-linear-gradient(-45deg, var(--hd-tape-1) 0 6px, var(--hd-tape-2) 6px 12px) no-repeat 8px 30% / 62% 48%; }
+/* プロジェクト: 淡いセージ色の製図用紙とステッチ */
+:root[data-tab="projects"] .nav { background-color: color-mix(in srgb, var(--hd-plan) 85%, transparent); background-image: linear-gradient(var(--hd-plan-line) 1px, transparent 1px), linear-gradient(90deg, var(--hd-plan-line) 1px, transparent 1px); background-size: 28px 28px; }
+:root[data-tab="projects"] .nav::before { bottom: 4px; height: 0; border-bottom: 1.5px dashed var(--hd-stitch); left: 12px; right: 12px; }
+/* アクション: 手帳の罫線と赤い余白線 */
+:root[data-tab="actions"] .nav { background-image: linear-gradient(90deg, transparent 22px, var(--hd-margin) 22px 23px, transparent 23px 26px, var(--hd-margin) 26px 27px, transparent 27px), repeating-linear-gradient(transparent 0 21px, var(--hd-rule) 21px 22px); }
+@media (prefers-color-scheme: dark) { :root[data-tab="inbox"] .nav { background-image: none; } }
+/* 広い画面: 見出しの列の幅と中央寄せは行にかける(見出しは行いっぱいに) */
+@media (min-width: 900px) {
+  .nav__large-row { max-width: 760px; margin-left: auto; margin-right: auto; }
+  .nav__large-row .nav__title-large { flex: 1; max-width: none; margin-left: 0; margin-right: 0; }
+}
