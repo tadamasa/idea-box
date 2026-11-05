@@ -235,6 +235,56 @@ test('ハブ: 合言葉が違えば断る', () => {
   assert.equal(hub.post({ token: 'x', since: 0 }).error, 'unauthorized');
 });
 
+test('ハブ: 投稿用合言葉は URL で送る capture だけに使え、同期・見出し取得には使えない', () => {
+  const hub = loadHub();
+  assert.ok(hub.captureToken);
+  assert.notEqual(hub.captureToken, hub.token);
+  const q = { token: hub.captureToken };
+  // URL の投稿用合言葉 + 本文は capture だけ → カードが1枚できる
+  const r = hub.post({ capture: { text: 'さくらからのテスト', source: 'muse' } }, q);
+  assert.equal(r.ok, true);
+  assert.ok(r.id);
+  // 応答にはカードの中身を含めない
+  assert.deepEqual(Object.keys(r).sort(), ['id', 'ok']);
+  const got = hub.post({ token: hub.token, since: 0, cards: [] }).cards;
+  assert.deepEqual(got.map(c => [c.id, c.data.body, c.data.inbox]), [[r.id, 'さくらからのテスト', true]]);
+  // 同期・見出し取得は断る
+  assert.equal(hub.post({ since: 0, cards: [] }, q).error, 'unauthorized');
+  assert.equal(hub.post({ meta: 'https://example.com/a' }, q).error, 'unauthorized');
+  // capture に他のものを混ぜても断る(同期の書き込みを紛れ込ませない)
+  assert.equal(hub.post({ capture: { text: 'x' }, cards: [{ id: 'evil', mtime: 1, data: { kind: 'memo' } }] }, q).error, 'unauthorized');
+  assert.equal(hub.post({ capture: { text: 'x' }, meta: 'https://example.com/a' }, q).error, 'unauthorized');
+  assert.equal(hub.post({ capture: { text: 'x' }, since: 0 }, q).error, 'unauthorized');
+  // 投稿用合言葉を本文に入れても通らない。既存の合言葉を URL に入れても通らない
+  assert.equal(hub.post({ token: hub.captureToken, capture: { text: 'x' } }).error, 'unauthorized');
+  assert.equal(hub.post({ capture: { text: 'x' } }, { token: hub.token }).error, 'unauthorized');
+  assert.equal(hub.post({ capture: { text: 'x' } }, { token: 'x' }).error, 'unauthorized');
+  assert.equal(hub.post({ capture: { text: 'x' } }).error, 'unauthorized');
+  assert.equal(hub.post({ capture: { text: ' ' } }, q).error, 'empty');
+  // ここまでで増えたのは最初の1枚だけ
+  assert.equal(hub.post({ token: hub.token, since: 0, cards: [] }).cards.length, 1);
+  // 既存の合言葉(本文)は、URL に何が付いていても従来どおりすべて使える
+  assert.equal(hub.post({ token: hub.token, capture: { text: '本文の合言葉' } }, q).ok, true);
+  assert.equal(hub.post({ token: hub.token, since: 0, cards: [] }, q).cards.length, 2);
+});
+
+test('ハブ: setup を再実行しても合言葉は変わらず、投稿用合言葉が未設定なら作る', () => {
+  const hub = loadHub();
+  const { token, captureToken } = hub;
+  hub.setup();
+  assert.equal(hub.props.TOKEN, token);
+  assert.equal(hub.props.CAPTURE_TOKEN, captureToken);
+  // 既存のデプロイ(投稿用合言葉がない)を想定: setup で投稿用だけが新しくでき、既存の合言葉は変わらない
+  delete hub.props.CAPTURE_TOKEN;
+  assert.equal(hub.post({ capture: { text: 'x' } }, { token: captureToken }).error, 'unauthorized');
+  hub.setup();
+  assert.equal(hub.props.TOKEN, token);
+  assert.ok(hub.props.CAPTURE_TOKEN);
+  assert.notEqual(hub.props.CAPTURE_TOKEN, captureToken);
+  assert.notEqual(hub.props.CAPTURE_TOKEN, token);
+  assert.equal(hub.post({ capture: { text: 'x' } }, { token: hub.props.CAPTURE_TOKEN }).ok, true);
+});
+
 test('ハブ: ショートカット・拡張からの capture でカードが1枚でき、タグ名は pendingTags に入る', () => {
   const hub = loadHub();
   const r = hub.post({ token: hub.token, capture: { text: '看板の文字', kind: 'photo', tags: '#京都 散歩', source: 'ios-shortcut' } });
