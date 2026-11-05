@@ -6,6 +6,7 @@ import vm from 'vm';
 export function loadHub({ fetch } = {}) {
   const sheets = new Map();
   const props = {};
+  let uuids = 0;
   const makeSheet = name => {
     const sh = { name, rows: [], maxRows: 1000, frozen: 0 };
     const range = (r, c, nr = 1, nc = 1) => {
@@ -32,7 +33,7 @@ export function loadHub({ fetch } = {}) {
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = String(v); } }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     ContentService: { createTextOutput: s => ({ text: s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
-    Utilities: { getUuid: () => '1234-5678-abcd' },
+    Utilities: { getUuid: () => `1234-5678-${(++uuids).toString(16).padStart(4, '0')}` },
     Logger: { log() {} },
     UrlFetchApp: {
       fetch: (url, opts) => {
@@ -47,7 +48,11 @@ export function loadHub({ fetch } = {}) {
   ctx.setup();
   return {
     token: props.TOKEN,
+    captureToken: props.CAPTURE_TOKEN,
+    props,
+    setup: () => ctx.setup(),
     sheets,
-    post: body => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } }).text),
+    // parameter は URL の ?token= などにあたる(Apps Script の e.parameter)
+    post: (body, parameter = {}) => JSON.parse(ctx.doPost({ parameter, postData: { contents: JSON.stringify(body) } }).text),
   };
 }

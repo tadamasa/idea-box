@@ -3,7 +3,7 @@
  *
  * 使い方は hub/README.md を参照。
  *  1. 新しいスプレッドシート → 拡張機能 → Apps Script に、このファイルを貼る
- *  2. setup を一度実行(合言葉が実行ログに出る)
+ *  2. setup を一度実行(合言葉と投稿用合言葉が実行ログに出る)
  *  3. デプロイ → 新しいデプロイ → ウェブアプリ(実行ユーザー: 自分、アクセス: 全員)
  *  4. 出たURLと合言葉を、idea-box の設定と Chrome拡張の設定に入れる
  *
@@ -16,11 +16,18 @@ const NAMES = ['cards'];
 const COLS = { cards: CARD_COLS };
 const PAGE = 400; // 1回の応答で返す最大件数
 
+// 合言葉は2つ。どちらも未設定のときだけ作るので、再実行しても今の値は変わらない。
+//  TOKEN         … アプリ・Chrome拡張・iOSショートカット用。本文の token で送り、同期・見出し取得・受け取りのすべてに使える
+//  CAPTURE_TOKEN … 他のAIなどが受信箱へ投稿するためだけの合言葉。URLの ?token= で送り、capture だけに使える
+//                  (URLは実行ログなどに残りうるため、漏れても影響が受信箱への投稿に限られるよう分けている。
+//                   作り直すときは、プロジェクトの設定 → スクリプト プロパティで CAPTURE_TOKEN を消してから setup を実行)
 function setup() {
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('TOKEN')) props.setProperty('TOKEN', Utilities.getUuid().replace(/-/g, ''));
+  if (!props.getProperty('CAPTURE_TOKEN')) props.setProperty('CAPTURE_TOKEN', Utilities.getUuid().replace(/-/g, ''));
   sheet_('cards', CARD_COLS);
   Logger.log('合言葉: ' + props.getProperty('TOKEN'));
+  Logger.log('投稿用合言葉: ' + props.getProperty('CAPTURE_TOKEN'));
 }
 
 function doGet() {
@@ -32,11 +39,20 @@ function doGet() {
 //
 // Chrome拡張とiOSショートカットは、かわりに { token, capture: {text, url, title, quote, kind, tags} } を送る。
 // ハブがカードを1枚作り、アプリは次の同期で受け取る(タグ名は pendingTags に入れ、アプリがタグに直す)。
+//
+// 他のAIなどは、投稿用合言葉を URL に付けて POST {URL}?token=<投稿用合言葉> に { capture: {...} } だけを送る。
+// この合言葉で通るのは capture だけ(本文に capture 以外が入っていれば断る)。同期・見出し取得はできない。
 function doPost(e) {
   let req;
   try { req = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'bad json' }); }
-  const token = PropertiesService.getScriptProperties().getProperty('TOKEN');
-  if (!token || req.token !== token) return json_({ ok: false, error: 'unauthorized' });
+  if (!req || typeof req !== 'object' || Array.isArray(req)) return json_({ ok: false, error: 'bad json' });
+  const props = PropertiesService.getScriptProperties();
+  const token = props.getProperty('TOKEN');
+  const captureToken = props.getProperty('CAPTURE_TOKEN');
+  const urlToken = e.parameter && e.parameter.token;
+  const full = !!token && req.token === token;
+  const captureOnly = !!captureToken && urlToken === captureToken && !!req.capture && Object.keys(req).every(k => k === 'capture');
+  if (!full && !captureOnly) return json_({ ok: false, error: 'unauthorized' });
   // アプリから、URLの代表画像と見出しを頼まれたとき(アプリからはページを直接読めないため)
   if (req.meta) {
     const u = String(req.meta);
@@ -47,7 +63,7 @@ function doPost(e) {
   if (req.capture) {
     const card = captureCard_(req.capture, new Date());
     if (!card) return json_({ ok: false, error: 'empty' });
-    req = { token: req.token, since: Number.MAX_SAFE_INTEGER, cards: [{ id: card.id, mtime: Date.now(), data: card }] };
+    req = { since: Number.MAX_SAFE_INTEGER, cards: [{ id: card.id, mtime: Date.now(), data: card }] };
     doSync_(req);
     return json_({ ok: true, id: card.id });
   }
